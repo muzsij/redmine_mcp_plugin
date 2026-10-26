@@ -307,6 +307,12 @@ class McpControllerTest < Redmine::ControllerTest
     assert_response :forbidden
     assert_match(/\Ascope="log_time"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
 
+    post_mcp rpc('tools/call', { 'name' => 'create_time_entry',
+                                 'arguments' => { 'issue_id' => 1, 'hours' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_project')
+    assert_response :forbidden
+    assert_match(/\Ascope="log_time"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
+
     post_mcp rpc('tools/call', { 'name' => 'update_time_entry',
                                  'arguments' => { 'id' => 1, 'hours' => 1 } }), oauth
     assert_response :forbidden

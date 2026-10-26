@@ -13,6 +13,8 @@ module RedmineMcpPlugin
       input_schema(
         'type' => 'object',
         'properties' => {
+          # view_issues is checked in the body, not declared: a write-tier
+          # challenge must not carry a read scope (see ScopeChallenge).
           'issue_id' => { 'type' => 'integer',
                           'description' => 'Issue to log time on. Either this or project is required. ' \
                                            'Requires view_issues.' },
@@ -29,11 +31,6 @@ module RedmineMcpPlugin
         'required' => %w[hours],
         'additionalProperties' => false
       )
-
-      def self.required_permissions(arguments = {})
-        permissions = super
-        arguments['issue_id'].present? ? permissions + %i[view_issues] : permissions
-      end
 
       private
 

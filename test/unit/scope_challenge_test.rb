@@ -26,6 +26,17 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
     end
   end
 
+  # A challenge carries one tier, so a write tool declaring a read permission
+  # (or the reverse) could never be challenged without raising.
+  def test_every_registered_tool_permission_matches_the_tool_tier
+    RedmineMcpPlugin::Registry.all.each do |tool|
+      next if tool.mcp_permission.nil?
+
+      assert_equal tool.write? ? :write : :read, Challenge::SCOPE_TIERS.fetch(tool.mcp_permission),
+                   "#{tool.tool_name} declares a permission from the other tier"
+    end
+  end
+
   def test_no_correlation_edge_crosses_its_source_tier
     Challenge::CORRELATED_SCOPES.each do |source, members|
       source_tier = Challenge::SCOPE_TIERS.fetch(source)
