@@ -119,8 +119,10 @@ class RedmineMcpPluginTimeEntryToolsTest < ActiveSupport::TestCase
     end
   end
 
-  def test_create_time_entry_requires_log_time_on_the_project
-    Role.find(2).remove_permission!(:log_time)
+  # Every role, including the built-in non-member role, so no other
+  # membership grants log_time globally.
+  def test_create_time_entry_requires_log_time
+    Role.find_each { |role| role.remove_permission!(:log_time) }
 
     with_read_only_off do
       assert_not_includes tools_list(build_server(User.find(3))).map { |t| t[:name] }, 'create_time_entry'
@@ -168,7 +170,7 @@ class RedmineMcpPluginTimeEntryToolsTest < ActiveSupport::TestCase
 
   def test_delete_time_entry_requires_edit_permission
     entry = make_entry(User.find(3), Issue.find(1))
-    Role.find(2).remove_permission!(:edit_own_time_entries)
+    Role.find_each { |role| role.remove_permission!(:edit_own_time_entries) }
 
     with_read_only_off do
       assert_not_includes tools_list(build_server(User.find(3))).map { |t| t[:name] }, 'delete_time_entry'
