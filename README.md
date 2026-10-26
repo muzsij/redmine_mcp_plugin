@@ -140,11 +140,19 @@ token scopes; tools denied by the user's role remain hidden.
 | Wiki pages | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
 | Metadata | `list_enumerations` (trackers, priorities, time entry activities) | None |
 | Users | `list_users` | Filtered by Redmine principal visibility |
-| Create an issue | `create_issue` | `add_issues`; read-only mode must be disabled |
+| Create an issue | `create_issue` | `add_issues`; a parent issue also requires `manage_subtasks`; read-only mode must be disabled |
+| Update an issue | `update_issue` | `edit_issues` (per tracker); a note also requires `add_issue_notes`, a private note `set_notes_private`, a parent change `manage_subtasks`; read-only mode must be disabled |
+| Relate issues | `add_issue_relation` | `manage_issue_relations` on the first issue's project; both issues must be visible; read-only mode must be disabled |
 | Add an issue note | `add_issue_note` | `add_issue_notes`; private notes also require `set_notes_private`; read-only mode must be disabled |
 | Time entries | `list_time_entries` | `view_time_entries`, honoring the role's own/all time entry visibility; the `issue_id` filter also requires `view_issues` |
 | Log time | `create_time_entry` | `log_time` on the project, always as the caller; logging on an issue also requires `view_issues`; read-only mode must be disabled |
 | Edit or delete own time | `update_time_entry`, `delete_time_entry` | `edit_own_time_entries`, and only the caller's own entries; read-only mode must be disabled |
+
+`create_issue` and `update_issue` refuse a field change that Redmine would
+otherwise drop silently, such as a status transition the workflow does not allow
+or a field the workflow makes read-only. `update_issue` does not support roles
+that hold only `edit_own_issues`. Assignees can be named by login, full name, or
+group name.
 
 Tool arguments are validated against their declared schemas. The paginated
 tools (`list_projects`, `search_issues`, `list_wiki_pages`, `list_users`, and
