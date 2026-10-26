@@ -295,6 +295,30 @@ class McpControllerTest < Redmine::ControllerTest
     )
   end
 
+  # log_time and edit_own_time_entries must be declared scopes: an undeclared
+  # permission makes the challenge builder raise and the call answer 500.
+  def test_time_entry_write_tools_challenge_for_their_write_scope
+    enable_mcp('read_only' => '0')
+    Role.find(1).add_permission!(:log_time, :edit_own_time_entries)
+    oauth = oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+
+    post_mcp rpc('tools/call', { 'name' => 'create_time_entry',
+                                 'arguments' => { 'project' => 'ecookbook', 'hours' => 1 } }), oauth
+    assert_response :forbidden
+    assert_match(/\Ascope="log_time"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
+
+    post_mcp rpc('tools/call', { 'name' => 'create_time_entry',
+                                 'arguments' => { 'issue_id' => 1, 'hours' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_project')
+    assert_response :forbidden
+    assert_match(/\Ascope="log_time"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
+
+    post_mcp rpc('tools/call', { 'name' => 'update_time_entry',
+                                 'arguments' => { 'id' => 1, 'hours' => 1 } }), oauth
+    assert_response :forbidden
+    assert_match(/\Ascope="edit_own_time_entries"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
+  end
+
   def test_private_issue_note_challenge_includes_every_required_scope
     enable_mcp('read_only' => '0')
     oauth = oauth_headers(User.find(2), scopes: 'add_issue_notes')

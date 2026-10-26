@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Redmine ${{ matrix.redmine }} / Ruby ${{ matrix.ruby }} / ${{ matrix.db }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Lowest supported Redmine and Ruby; Rails 7.2 rejects newer migration versions.
+          - redmine: 6.1-stable
+            ruby: "3.2"
+            db: sqlite3
+          - redmine: 6.1-stable
+            ruby: "3.4"
+            db: postgresql
+          - redmine: 7.0-stable
+            ruby: "4.0"
+            db: postgresql
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: redmine
+          POSTGRES_PASSWORD: redmine
+          POSTGRES_DB: redmine_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RAILS_ENV: test
+
+    steps:
+      - name: Check out Redmine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: redmine/redmine
+          ref: ${{ matrix.redmine }}
+
+      - name: Check out plugin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: plugins/redmine_mcp_plugin
+
+      # Redmine's Gemfile selects the database adapter gem from database.yml,
+      # so it must exist before bundle install.
+      - name: Configure test database
+        run: |
+          if [ "${{ matrix.db }}" = postgresql ]; then
+            cat > config/database.yml <<'YAML'
+          test:
+            adapter: postgresql
+            host: localhost
+            port: 5432
+            database: redmine_test
+            username: redmine
+            password: redmine
+            encoding: utf8
+          YAML
+          else
+            cat > config/database.yml <<'YAML'
+          test:
+            adapter: sqlite3
+            database: db/test.sqlite3
+          YAML
+          fi
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Prepare test database
+        run: |
+          bundle exec rake db:create db:migrate
+          bundle exec rake redmine:plugins:migrate
+
+      - name: Run plugin tests
+        run: bundle exec rake redmine:plugins:test NAME=redmine_mcp_plugin
