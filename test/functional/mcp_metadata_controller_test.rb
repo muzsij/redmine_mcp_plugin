@@ -43,8 +43,11 @@ class McpMetadataControllerTest < Redmine::ControllerTest
     assert_includes JSON.parse(response.body)['scopes_supported'], 'add_issues'
   end
 
+  # Stubs the controller's accessor, not Doorkeeper.config: Rails 8 loads routes
+  # lazily on the first request, and the plugin's route file configures
+  # Doorkeeper, so a global stub can break route loading instead.
   def test_authorization_server_scope_failure_falls_back_to_bootstrap_scopes
-    Doorkeeper.stubs(:config).raises(StandardError, 'configuration unavailable')
+    McpMetadataController.any_instance.stubs(:doorkeeper_config).raises(StandardError, 'configuration unavailable')
 
     get :authorization_server
 
