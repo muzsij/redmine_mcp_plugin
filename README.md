@@ -138,13 +138,17 @@ token scopes; tools denied by the user's role remain hidden.
 | Projects | `list_projects`, `get_project` | `view_project` |
 | Issues | `search_issues`, `get_issue` | `view_issues` |
 | Wiki pages | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
-| Metadata | `list_enumerations` | None |
+| Metadata | `list_enumerations` (trackers, priorities, time entry activities) | None |
 | Users | `list_users` | Filtered by Redmine principal visibility |
 | Create an issue | `create_issue` | `add_issues`; read-only mode must be disabled |
 | Add an issue note | `add_issue_note` | `add_issue_notes`; private notes also require `set_notes_private`; read-only mode must be disabled |
+| Time entries | `list_time_entries` | `view_time_entries`, honoring the role's own/all time entry visibility; the `issue_id` filter also requires `view_issues` |
+| Log time | `create_time_entry` | `log_time` on the project, always as the caller; logging on an issue also requires `view_issues`; read-only mode must be disabled |
+| Edit or delete own time | `update_time_entry`, `delete_time_entry` | `edit_own_time_entries`, and only the caller's own entries; read-only mode must be disabled |
 
 Tool arguments are validated against their declared schemas. The paginated
-tools (`list_projects`, `search_issues`, `list_wiki_pages`, and `list_users`)
+tools (`list_projects`, `search_issues`, `list_wiki_pages`, `list_users`, and
+`list_time_entries`)
 support `limit` and `offset`, report pagination metadata, and cap each page at
 the configured maximum (100 by default, with an absolute maximum of 1000).
 

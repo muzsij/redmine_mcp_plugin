@@ -18,6 +18,14 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
     end
   end
 
+  # The HTTP gate builds step-up challenges through SCOPE_TIERS.fetch, so a
+  # registered tool whose permission is undeclared would answer 500 instead.
+  def test_every_registered_tool_permission_is_a_declared_scope
+    RedmineMcpPlugin::Registry.all.filter_map(&:mcp_permission).each do |permission|
+      assert Challenge::SCOPE_TIERS.key?(permission), "tool permission #{permission} is undeclared"
+    end
+  end
+
   def test_no_correlation_edge_crosses_its_source_tier
     Challenge::CORRELATED_SCOPES.each do |source, members|
       source_tier = Challenge::SCOPE_TIERS.fetch(source)
