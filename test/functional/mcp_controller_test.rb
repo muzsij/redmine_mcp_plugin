@@ -319,6 +319,20 @@ class McpControllerTest < Redmine::ControllerTest
     assert_match(/\Ascope="edit_own_time_entries"\z/, response.headers['WWW-Authenticate'][/scope="[^"]*"/])
   end
 
+  def test_issue_update_challenge_includes_every_argument_dependent_scope
+    enable_mcp('read_only' => '0')
+    Role.find(1).add_permission!(:edit_issues, :add_issue_notes, :set_notes_private, :manage_subtasks)
+
+    post_mcp rpc('tools/call', { 'name' => 'update_issue',
+                                 'arguments' => { 'id' => 1, 'notes' => 'n', 'private' => true,
+                                                  'parent_issue_id' => 'none' } }),
+             oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :forbidden
+    assert_equal 'scope="edit_issues add_issue_notes set_notes_private manage_subtasks"',
+                 response.headers['WWW-Authenticate'][/scope="[^"]*"/]
+  end
+
   def test_private_issue_note_challenge_includes_every_required_scope
     enable_mcp('read_only' => '0')
     oauth = oauth_headers(User.find(2), scopes: 'add_issue_notes')
