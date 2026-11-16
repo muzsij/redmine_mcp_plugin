@@ -8,11 +8,11 @@ class McpControllerTest < Redmine::ControllerTest
            :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules, :time_entries, :issue_categories, :versions, :issue_relations, :workflows, :projects_trackers
 
   # The bootstrap challenge advertises OAUTH_BOOTSTRAP_SCOPES: the three core read
-  # scopes plus the two read satellites (watchers, time entries) that ticket 07
-  # folds into bootstrap. No write scope and no view_private_notes.
+  # scopes, the two read satellites (watchers, time entries) and
+  # view_private_notes. No write scope while read-only mode is on.
   OAUTH_CHALLENGE =
     'Bearer realm="Redmine", resource_metadata="http://test.host/.well-known/oauth-protected-resource/mcp", ' \
-    'scope="view_issues view_project view_wiki_pages view_issue_watchers view_time_entries"'
+    'scope="view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes"'
 
   def setup
     Setting.rest_api_enabled = '1'
@@ -78,6 +78,34 @@ class McpControllerTest < Redmine::ControllerTest
 
     assert_response :unauthorized
     assert_equal OAUTH_CHALLENGE, response.headers['WWW-Authenticate']
+  end
+
+  # Claude does not accumulate step-up grants, so with writes enabled the initial
+  # challenge must already request the write tools' scopes.
+  def test_unauthenticated_challenge_includes_write_scopes_when_writes_are_enabled
+    enable_mcp('read_only' => '0')
+
+    post_mcp rpc('tools/list')
+
+    assert_response :unauthorized
+    scopes = response.headers['WWW-Authenticate'][/scope="([^"]*)"/, 1].split
+    assert_equal RedmineMcp::OauthScopes.initial, scopes
+    assert_includes scopes, 'add_issues'
+    assert_includes scopes, 'edit_issues'
+    assert_includes scopes, 'log_time'
+  end
+
+  def test_insufficient_scope_challenge_is_logged
+    enable_mcp('read_only' => '0')
+    oauth = oauth_headers(User.find(2), scopes: 'view_issues')
+    Rails.logger.expects(:warn).with(
+      regexp_matches(/insufficient_scope for tool "create_issue".*required=\["add_issues"\].*challenged="add_issues add_issue_notes"/)
+    )
+
+    post_mcp rpc('tools/call', { 'name' => 'create_issue',
+                                 'arguments' => { 'project' => 'ecookbook', 'subject' => 'x' } }), oauth
+
+    assert_response :forbidden
   end
 
   def test_invalid_oauth_token_challenge_includes_minimal_bootstrap_scopes

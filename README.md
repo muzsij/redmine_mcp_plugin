@@ -114,10 +114,20 @@ plugin publishes protected-resource and authorization-server metadata at:
 ```
 
 The protected-resource metadata and the `/mcp` authentication challenge advertise
-`view_issues view_project view_wiki_pages view_issue_watchers view_time_entries`
-as the minimal read bootstrap scopes for an initial client handshake. Write scopes
-and `view_private_notes` are requested through step-up challenges as operations
-need them.
+the scopes for an initial client handshake. In read-only mode these are the read
+bootstrap scopes
+`view_issues view_project view_wiki_pages view_issue_watchers view_time_entries
+view_private_notes`. With read-only mode off they also include the scope of every
+write tool (`add_issues edit_issues manage_issue_relations add_issue_notes
+manage_versions edit_wiki_pages log_time edit_own_time_entries manage_subtasks
+set_notes_private`), because clients such as Claude do not keep scopes gained
+through step-up across reconnects. `admin` and `edit_time_entries` are still
+requested only through step-up challenges. Each
+challenge is logged as a `[redmine_mcp] insufficient_scope` warning that names the
+tool, the required permissions and the token's scopes.
+
+A client registered before this change keeps its narrower registered scopes.
+Remove it from the client and reconnect so that it registers again.
 
 Dynamic client registration (RFC 7591) is optional and disabled by default.
 Enabling it exposes `POST /oauth/registration` so MCP clients can register

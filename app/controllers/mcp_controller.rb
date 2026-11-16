@@ -120,7 +120,7 @@ class McpController < ApplicationController
         response.set_header(
           'WWW-Authenticate',
           "Bearer realm=\"Redmine\", resource_metadata=\"#{oauth_protected_resource_url}\", " \
-          "scope=\"#{RedmineMcp::OAUTH_BOOTSTRAP_SCOPES.join(' ')}\""
+          "scope=\"#{RedmineMcp::OauthScopes.initial.join(' ')}\""
         )
       end
       return render json: { error: result.error }, status: result.status
@@ -184,14 +184,20 @@ class McpController < ApplicationController
                               head :forbidden
                               return false
                             end
-    response.set_header(
-      'WWW-Authenticate',
-      RedmineMcp::ScopeChallenge.header(
-        permissions: challenge_permissions,
-        write: write_tier,
-        resource_metadata: oauth_protected_resource_url
-      )
+    challenge = RedmineMcp::ScopeChallenge.header(
+      permissions: challenge_permissions,
+      write: write_tier,
+      resource_metadata: oauth_protected_resource_url
     )
+    # Clients surface this only as a generic "reconnect" prompt, so the log is
+    # where an operator sees which scope the token lacked. Scope and tool names
+    # carry no credentials.
+    Rails.logger.warn(
+      "[redmine_mcp] insufficient_scope for tool #{tool.name_value.inspect} user=#{User.current.login.inspect}: " \
+      "required=#{permissions.map(&:to_s).inspect} token=#{Array(@mcp_auth[:scopes]).map(&:to_s).inspect} " \
+      "challenged=#{challenge[/scope="([^"]*)"/, 1].inspect}"
+    )
+    response.set_header('WWW-Authenticate', challenge)
     head :forbidden
     false
   end

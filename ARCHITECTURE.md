@@ -381,7 +381,11 @@ or the database must not cross that boundary.
 [`McpMetadataController`](app/controllers/mcp_metadata_controller.rb) serves the
 public protected-resource and authorization-server documents only when both the
 MCP endpoint and OAuth mode are enabled. The protected-resource document
-advertises only the minimal bootstrap scopes, while authorization-server
+advertises [`OauthScopes.initial`](lib/redmine_mcp/oauth_scopes.rb): the read
+bootstrap scopes, including `view_private_notes`, plus the write tools' scopes
+when read-only mode is off, because clients that drop step-up grants on reconnect
+could otherwise never hold write authority. `admin` and `edit_time_entries` stay
+step-up only. Authorization-server
 metadata derives the provider's supported scopes and PKCE support from the
 host's Doorkeeper configuration. Scope enumeration failures fall back to the
 bootstrap set. The controller advertises dynamic registration only when that

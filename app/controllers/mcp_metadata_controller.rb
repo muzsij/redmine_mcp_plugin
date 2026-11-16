@@ -19,7 +19,7 @@ class McpMetadataController < ApplicationController
     render json: {
       resource: mcp_resource_url,
       authorization_servers: [root_url_without_trailing_slash],
-      scopes_supported: bootstrap_scopes,
+      scopes_supported: RedmineMcp::OauthScopes.initial,
       bearer_methods_supported: %w[header],
       resource_name: 'Redmine MCP',
       resource_documentation: 'https://github.com/serenysoft/redmine_mcp_plugin'
