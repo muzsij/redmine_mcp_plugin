@@ -166,11 +166,15 @@ class McpController < ApplicationController
     return true unless @mcp_auth[:mode] == :oauth2
     return true if permissions.all? { |permission| User.current.allowed_to?(permission, nil, global: true) }
 
+    # The challenge tier follows the authority the call needs, not the tool's
+    # write flag: list_issue_custom_fields reads, but only for callers who may
+    # add issues, so its step-up is legitimately write-tier.
+    write_tier = tool.write? || RedmineMcp::ScopeChallenge.write_tier?(permissions)
     challenge_permissions = if tool.permission_scopes_can_authorize?(
                               User.current, permissions: permissions
                             )
                               permissions
-                            elsif tool.write?
+                            elsif write_tier
                               %i[admin]
                             else
                               # The admin scope could make this call succeed, but
@@ -184,7 +188,7 @@ class McpController < ApplicationController
       'WWW-Authenticate',
       RedmineMcp::ScopeChallenge.header(
         permissions: challenge_permissions,
-        write: tool.write?,
+        write: write_tier,
         resource_metadata: oauth_protected_resource_url
       )
     )

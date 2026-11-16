@@ -58,6 +58,12 @@ module RedmineMcp
 
     module_function
 
+    # Whether any required permission is write-tier, which makes the whole
+    # challenge write-tier. Fails closed on an undeclared permission.
+    def write_tier?(permissions)
+      permissions.any? { |permission| SCOPE_TIERS.fetch(permission.to_sym) == :write }
+    end
+
     def header(permissions:, write:, resource_metadata:)
       scopes = permissions.flat_map { |permission| challenge_scopes(permission, write: write) }.uniq
       'Bearer error="insufficient_scope", ' \

@@ -439,6 +439,23 @@ class McpControllerTest < Redmine::ControllerTest
     )
   end
 
+  # list_issue_custom_fields reads but is gated on add_issues, so a narrow
+  # token must get a write-tier challenge rather than a 500.
+  def test_read_tool_gated_on_a_write_permission_gets_a_write_tier_challenge
+    oauth = oauth_headers(User.find(2), scopes: 'view_issues view_project')
+
+    post_mcp rpc('tools/call', { 'name' => 'list_issue_custom_fields',
+                                 'arguments' => { 'project' => 'ecookbook' } }), oauth
+
+    assert_response :forbidden
+    assert_equal(
+      'Bearer error="insufficient_scope", scope="add_issues add_issue_notes", ' \
+      'resource_metadata="http://test.host/.well-known/oauth-protected-resource/mcp", ' \
+      'error_description="The access token lacks the scope required for this operation"',
+      response.headers['WWW-Authenticate']
+    )
+  end
+
   def test_private_issue_note_challenge_includes_every_required_scope
     enable_mcp('read_only' => '0')
     oauth = oauth_headers(User.find(2), scopes: 'add_issue_notes')

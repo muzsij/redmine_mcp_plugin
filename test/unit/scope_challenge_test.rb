@@ -80,6 +80,13 @@ class RedmineMcpScopeChallengeTest < ActiveSupport::TestCase
     end
   end
 
+  def test_write_tier_follows_the_most_privileged_permission
+    assert_not Challenge.write_tier?(%i[view_issues view_project])
+    assert Challenge.write_tier?(%i[add_issues])
+    assert Challenge.write_tier?(%i[view_issues add_issues])
+    assert_raises(KeyError) { Challenge.write_tier?(%i[not_a_permission]) }
+  end
+
   private
 
   def scope_of(header)
