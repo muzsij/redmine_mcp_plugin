@@ -120,8 +120,10 @@ and `view_private_notes` are requested through step-up challenges as operations
 need them.
 
 Dynamic client registration (RFC 7591) is optional and disabled by default.
-Enabling it exposes `POST /oauth/registration` so public MCP clients can register
-before completing Authorization Code with PKCE.
+Enabling it exposes `POST /oauth/registration` so MCP clients can register
+before completing Authorization Code with PKCE. Both public clients
+(`token_endpoint_auth_method` `none`) and confidential clients
+(`client_secret_basic` or `client_secret_post`, which Claude uses) are accepted.
 
 Authentication is only the first boundary: a tool must also be allowed by the
 user's Redmine permissions, OAuth scopes when present, and Redmine's record

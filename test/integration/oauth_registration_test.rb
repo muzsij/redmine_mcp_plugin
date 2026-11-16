@@ -84,9 +84,20 @@ class OauthRegistrationTest < Redmine::IntegrationTest
     assert_not_equal 201, response.status
   end
 
-  def test_confidential_registration_is_refused
+  def test_confidential_registration_succeeds_with_a_secret
+    assert_difference 'Doorkeeper::Application.count', 1 do
+      register public_client_body.merge(token_endpoint_auth_method: 'client_secret_post')
+    end
+    assert_response :created
+
+    body = JSON.parse(response.body)
+    assert body['client_secret'].present?, 'a confidential client must receive its secret'
+    assert Doorkeeper::Application.find_by(uid: body['client_id']).confidential
+  end
+
+  def test_unadvertised_auth_method_is_refused
     assert_no_difference 'Doorkeeper::Application.count' do
-      register public_client_body.merge(token_endpoint_auth_method: 'client_secret_basic')
+      register public_client_body.merge(token_endpoint_auth_method: 'private_key_jwt')
     end
     assert_not_equal 201, response.status
   end

@@ -390,7 +390,9 @@ setting is enabled.
 [`DynamicClientRegistration`](lib/redmine_mcp/dynamic_client_registration.rb)
 loads `doorkeeper-openid_connect` during route drawing, avoiding the gem's early
 controller binding. It exposes only the gem's registration controller and admits
-public clients whose redirect URIs are all HTTPS or loopback. Its gate requires the
+public and secret-based clients, using exactly the token endpoint auth methods the
+metadata advertises, whose redirect URIs are all HTTPS or loopback. Refusals are
+logged with their reason, since the client only sees a generic 401. Its gate requires the
 endpoint, OAuth mode, and dynamic registration setting to be enabled. Because the
 lazy load happens after production eager-loads the access grant model, it also
 attaches the gem's `openid_request` association to that model explicitly; the

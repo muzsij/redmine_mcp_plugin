@@ -26,6 +26,14 @@ class McpMetadataControllerTest < Redmine::ControllerTest
     assert_equal 'http://test.host/oauth/registration', JSON.parse(response.body)['registration_endpoint']
   end
 
+  def test_authorization_server_advertises_the_registration_auth_methods
+    get :authorization_server
+
+    assert_response :success
+    assert_equal %w[none client_secret_basic client_secret_post],
+                 JSON.parse(response.body)['token_endpoint_auth_methods_supported']
+  end
+
   def test_protected_resource_advertises_only_the_bootstrap_scopes
     get :protected_resource
 

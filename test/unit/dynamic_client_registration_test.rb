@@ -39,14 +39,19 @@ class RedmineMcpDcrPolicyTest < ActiveSupport::TestCase
     with_settings_hash(RedmineMcp::Settings::DEFAULTS) { assert_not DCR.gate_open? }
   end
 
-  def test_only_token_endpoint_auth_method_none_is_public
-    assert DCR.public_client?(params('token_endpoint_auth_method' => 'none'))
-    assert_not DCR.public_client?(params('token_endpoint_auth_method' => 'client_secret_basic'))
-    assert_not DCR.public_client?(params('token_endpoint_auth_method' => 'client_secret_post'))
+  def test_advertised_auth_methods_are_accepted
+    assert DCR.accepted_auth_method?(params('token_endpoint_auth_method' => 'none'))
+    assert DCR.accepted_auth_method?(params('token_endpoint_auth_method' => 'client_secret_basic'))
+    assert DCR.accepted_auth_method?(params('token_endpoint_auth_method' => 'client_secret_post'))
   end
 
-  def test_missing_auth_method_is_not_public
-    assert_not DCR.public_client?(ActionController::Parameters.new(redirect_uris: ['https://a.example/cb']))
+  def test_missing_auth_method_defaults_to_an_accepted_method
+    assert DCR.accepted_auth_method?(ActionController::Parameters.new(redirect_uris: ['https://a.example/cb']))
+  end
+
+  def test_unadvertised_auth_methods_are_refused
+    assert_not DCR.accepted_auth_method?(params('token_endpoint_auth_method' => 'private_key_jwt'))
+    assert_not DCR.accepted_auth_method?(params('token_endpoint_auth_method' => 'tls_client_auth'))
   end
 
   def test_loopback_and_https_redirects_are_acceptable
@@ -70,11 +75,25 @@ class RedmineMcpDcrPolicyTest < ActiveSupport::TestCase
     assert_not DCR.redirect_uris_acceptable?(ActionController::Parameters.new({}))
   end
 
-  def test_permitted_requires_gate_public_client_and_good_redirects
+  def test_permitted_requires_gate_accepted_auth_method_and_good_redirects
     with_settings_hash(all_on) do
       assert DCR.permitted?(params)
-      assert_not DCR.permitted?(params('token_endpoint_auth_method' => 'client_secret_basic'))
+      assert DCR.permitted?(params('token_endpoint_auth_method' => 'client_secret_post'))
+      assert_not DCR.permitted?(params('token_endpoint_auth_method' => 'private_key_jwt'))
       assert_not DCR.permitted?(params(redirect_uris: ['http://evil.example/cb']))
+    end
+  end
+
+  def test_refusal_reason_names_the_failed_check
+    with_settings_hash(all_on) do
+      assert_nil DCR.refusal_reason(params)
+      assert_equal 'unsupported token endpoint auth method',
+                   DCR.refusal_reason(params('token_endpoint_auth_method' => 'private_key_jwt'))
+      assert_equal 'redirect URI not HTTPS or loopback',
+                   DCR.refusal_reason(params(redirect_uris: ['http://evil.example/cb']))
+    end
+    with_settings_hash(all_on('dcr_enabled' => '0')) do
+      assert_equal 'registration disabled', DCR.refusal_reason(params)
     end
   end
 

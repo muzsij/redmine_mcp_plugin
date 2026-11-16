@@ -5,7 +5,13 @@ module RedmineMcp
   # Only POST /oauth/registration is used; no ID token is ever minted.
   module DynamicClientRegistration
     LOOPBACK_HOSTS = %w[localhost 127.0.0.1 ::1].freeze
-    PUBLIC_CLIENT_AUTH_METHOD = 'none'
+    # The methods advertised in authorization-server metadata. A confidential
+    # registration is no weaker than a public one: the secret goes only to the
+    # registrant, and the token endpoint then demands it on top of any PKCE.
+    # Clients such as Claude register only as client_secret_post.
+    ACCEPTED_AUTH_METHODS = %w[none client_secret_basic client_secret_post].freeze
+    # RFC 7591 section 2 default when the client omits the method.
+    DEFAULT_AUTH_METHOD = 'client_secret_basic'
 
     class << self
       def available?
@@ -54,16 +60,35 @@ module RedmineMcp
       end
 
       def permitted?(params)
-        gate_open? && public_client?(params) && redirect_uris_acceptable?(params)
+        reason = refusal_reason(params)
+        return true if reason.nil?
+
+        # The client sees only a generic 401, so the log is where an operator
+        # learns why. Registration metadata carries no credentials.
+        Rails.logger.warn(
+          "[redmine_mcp] dynamic client registration refused (#{reason}): " \
+          "token_endpoint_auth_method=#{params[:token_endpoint_auth_method].inspect} " \
+          "redirect_uris=#{Array(params[:redirect_uris]).map(&:to_s).inspect} " \
+          "client_name=#{params[:client_name].to_s.truncate(100).inspect}"
+        )
+        false
+      end
+
+      def refusal_reason(params)
+        return 'registration disabled' unless gate_open?
+        return 'unsupported token endpoint auth method' unless accepted_auth_method?(params)
+        return 'redirect URI not HTTPS or loopback' unless redirect_uris_acceptable?(params)
+
+        nil
       end
 
       def gate_open?
         Settings.enabled? && Settings.oauth2_auth? && Settings.dcr_enabled?
       end
 
-      # Public clients only; an omitted method defaults to confidential per RFC 7591.
-      def public_client?(params)
-        params[:token_endpoint_auth_method].to_s == PUBLIC_CLIENT_AUTH_METHOD
+      def accepted_auth_method?(params)
+        method = params[:token_endpoint_auth_method].presence&.to_s || DEFAULT_AUTH_METHOD
+        ACCEPTED_AUTH_METHODS.include?(method)
       end
 
       # Every redirect URI must be loopback or HTTPS, and at least one is required.

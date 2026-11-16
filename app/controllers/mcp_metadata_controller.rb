@@ -34,7 +34,9 @@ class McpMetadataController < ApplicationController
       scopes_supported: supported_scopes,
       response_types_supported: %w[code],
       grant_types_supported: %w[authorization_code refresh_token],
-      token_endpoint_auth_methods_supported: %w[client_secret_basic client_secret_post],
+      # Clients pick their registration method from this list, so it must
+      # match what dynamic registration admits.
+      token_endpoint_auth_methods_supported: RedmineMcp::DynamicClientRegistration::ACCEPTED_AUTH_METHODS,
       service_documentation: 'https://www.redmine.org/projects/redmine/wiki/Rest_api#OAuth2'
     }
     if RedmineMcp::Settings.dcr_enabled?
