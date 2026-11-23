@@ -43,7 +43,8 @@ module RedmineMcp
               'required' => %w[value],
               'additionalProperties' => false
             }
-          }
+          },
+          'uploads' => Uploads::SCHEMA
         },
         'required' => %w[project subject],
         'additionalProperties' => false
@@ -107,11 +108,13 @@ module RedmineMcp
         if (entries = arguments['custom_fields'].presence)
           issue.safe_attributes = { 'custom_field_values' => IssueCustomFields.resolve(issue, user, entries) }
         end
+        attached = (uploads = arguments['uploads'].presence) ? Uploads.queue!(issue, user, uploads) : []
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
         { id: issue.id, subject: issue.subject, project_identifier: project.identifier,
           status: issue.status&.name, tracker: issue.tracker&.name, category: issue.category&.name,
-          fixed_version: issue.fixed_version&.name, parent_id: issue.parent_id, custom_fields: visible_custom_fields(issue), created_on: iso(issue.created_on) }
+          fixed_version: issue.fixed_version&.name, parent_id: issue.parent_id, custom_fields: visible_custom_fields(issue), created_on: iso(issue.created_on),
+          attachments: Uploads.summarize(attached) }
       end
 
       def visible_custom_fields(issue)

@@ -22,6 +22,14 @@ en:
       max_results_hint: "Upper bound on rows any single tool may return. Capped at %{max}."
       dcr_enabled: Enable dynamic client registration (RFC 7591)
       dcr_enabled_hint: "Off by default. When on, opens an unauthenticated registration endpoint where any caller can register an OAuth2 client."
+      section_uploads: Attachment uploads
+      uploads_intro: "With read-only mode off, AI clients can attach files to issues through an upload URL or as small inline content. Redmine's attachment size limit and allowed extensions apply."
+      url_upload_enabled: Allow downloads from URLs
+      url_upload_enabled_hint: "Off by default. When on, this Redmine server downloads https links that an AI client supplies and stores them as attachments."
+      url_upload_allow_private: Allow internal addresses
+      url_upload_allow_private_hint: "Off by default. When off, URLs that resolve to loopback, private, link-local (including cloud metadata) or other non-public addresses are refused. Turn on only if the server must reach intranet hosts."
+      url_upload_allowed_hosts: Allowed download hosts
+      url_upload_allowed_hosts_hint: "One per line, e.g. files.example.com, or *.example.com for its subdomains. Leave empty to allow any host."
       rest_api_warning: "The REST API is disabled in Administration > Settings > API, which disables OAuth2, API key and HTTP Basic authentication for this endpoint too."
       no_auth_warning: "No authentication mode is enabled, so the endpoint will refuse every request."
       tab_general: General

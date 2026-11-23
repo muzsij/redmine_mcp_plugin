@@ -172,6 +172,7 @@ token scopes; tools denied by the user's role remain hidden.
 | Edit or delete own time | `update_time_entry`, `delete_time_entry` | `edit_own_time_entries` or `edit_time_entries`; read-only mode must be disabled; deletion is marked destructive |
 | Create a version | `create_version` | `manage_versions`; read-only mode must be disabled |
 | Create a wiki page | `create_wiki_page` | `edit_wiki_pages`; read-only mode must be disabled |
+| Upload a file | `create_attachment_upload`, `upload_attachment_content`, `upload_attachment_from_url` | Any permission that allows uploads in Redmine (for example `add_issues`, `edit_issues`, or `add_issue_notes`); read-only mode must be disabled; `upload_attachment_from_url` also requires the administrator setting |
 
 Issue creation and updates accept status, category, target version, and parent issue.
 Setting a parent also requires `manage_subtasks`. Redmine's workflow and safe
@@ -187,6 +188,55 @@ Tool arguments are validated against their declared schemas. The paginated
 tools (`list_projects`, `search_issues`, `list_wiki_pages`, `list_users`, and `list_time_entries`)
 support `limit` and `offset`, report pagination metadata, and cap each page at
 the configured maximum (100 by default, with an absolute maximum of 1000).
+
+## Attaching files
+
+Attaching a file to an issue takes two steps, as in Redmine's REST API. First,
+store the file as a pending upload and get a token. Then pass the token in the
+`uploads` argument of `create_issue`, `update_issue`, or `add_issue_note`. Each
+upload entry is `{token, filename?, description?, content_type?}`. A call accepts
+at most 10 uploads. `add_issue_note` accepts uploads without note text. There are
+three ways to get a token:
+
+- **`create_attachment_upload`** is for a file in the client's own environment,
+  such as Claude Code's machine or a code sandbox. It returns an `upload_url` that
+  is valid for 15 minutes. Send the raw bytes there:
+
+  ```sh
+  curl --fail --data-binary @report.pdf -H "Content-Type: application/octet-stream" "UPLOAD_URL"
+  ```
+
+  The JSON response contains the token. The file never passes through the model.
+  The environment must be able to reach Redmine over HTTP; some hosted sandboxes
+  cannot.
+- **`upload_attachment_from_url`** has the Redmine server download an `https`
+  link, such as a pre-signed download link from another connector. Only links
+  that work without the user's own credentials can succeed. This tool is off by
+  default; see below.
+- **`upload_attachment_content`** takes the file as base64 in the tool call. It
+  is limited to 64 KiB, because the content passes through the conversation.
+
+Redmine's attachment size limit and its allowed and denied extensions apply to
+every path. A token can only be attached by the user who uploaded it. Uploads that
+are never attached are removed by Redmine's `redmine:attachments:prune` task.
+
+### Downloads from URLs
+
+The **Attachment uploads** section of the plugin settings controls server-side
+downloads:
+
+- **Allow downloads from URLs** turns `upload_attachment_from_url` on. It is off
+  by default.
+- **Allowed download hosts** is an optional list of host names, one per line. Use
+  `*.example.com` to match subdomains. When the list is empty, any host is
+  allowed.
+- **Allow internal addresses** is off by default. While it is off, URLs that
+  resolve to loopback, private, link-local (including cloud metadata), or other
+  non-public addresses are refused. Turn it on only if the server must reach
+  intranet hosts.
+
+Only `https` is supported. Redirects are followed at most three times, and each
+hop is checked against the same rules. Proxy environment variables are not used.
 
 ## Prompts
 

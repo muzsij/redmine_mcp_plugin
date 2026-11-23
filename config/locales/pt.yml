@@ -22,6 +22,14 @@ pt:
       max_results_hint: "Limite superior de linhas devolvidas por uma ferramenta. Limitado a %{max}."
       dcr_enabled: Activar registo dinamico de clientes (RFC 7591)
       dcr_enabled_hint: "Desactivado por omissao. Quando activo, abre um endpoint de registo sem autenticacao onde qualquer cliente pode registar uma aplicacao OAuth2."
+      section_uploads: Envio de anexos
+      uploads_intro: "Com o modo so de leitura desactivado, os clientes de IA podem anexar ficheiros a tarefas atraves de um URL de envio ou como pequeno conteudo incorporado. Aplicam-se o tamanho maximo e as extensoes permitidas dos anexos do Redmine."
+      url_upload_enabled: Permitir transferencias a partir de URLs
+      url_upload_enabled_hint: "Desactivado por omissao. Quando activo, este servidor Redmine transfere ligacoes https indicadas por um cliente de IA e guarda-as como anexos."
+      url_upload_allow_private: Permitir enderecos internos
+      url_upload_allow_private_hint: "Desactivado por omissao. Quando desactivado, URLs que resolvem para enderecos de loopback, privados, link-local (incluindo metadados de cloud) ou outros nao publicos sao recusados. Active apenas se o servidor tiver de aceder a maquinas da intranet."
+      url_upload_allowed_hosts: Anfitrioes permitidos para transferencia
+      url_upload_allowed_hosts_hint: "Um por linha, por exemplo files.example.com, ou *.example.com para os seus subdominios. Deixe vazio para permitir qualquer anfitriao."
       rest_api_warning: "A API REST esta desactivada em Administracao > Configuracao > API, o que desactiva tambem a autenticacao OAuth2, por chave de API e HTTP Basic neste endpoint."
       no_auth_warning: "Nenhum modo de autenticacao esta activo, pelo que o endpoint vai recusar todos os pedidos."
       tab_general: Geral

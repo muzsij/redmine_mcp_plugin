@@ -49,6 +49,9 @@ The boxes inside `redmine_mcp` correspond to code owned here:
   and optional dynamic-registration routes into the Rails router.
 - [`McpController`](app/controllers/mcp_controller.rb) is the HTTP and security
   boundary for `/mcp`.
+- [`McpUploadsController`](app/controllers/mcp_uploads_controller.rb) receives
+  file bytes at `/mcp/uploads`, authenticated only by a signed upload ticket (see
+  [Attachment uploads](#attachment-uploads)).
 - [`Authenticator`](lib/redmine_mcp/authenticator.rb),
   [`McpServer`](lib/redmine_mcp/mcp_server.rb),
   [`Registry`](lib/redmine_mcp/registry.rb), and
@@ -239,6 +242,113 @@ offers a `view_issues` step-up before dispatch, mirroring the tool gate; the
 challenged scope is request-level, so it discloses nothing about a specific
 attachment.
 
+### Attachment uploads
+
+Uploads follow Redmine's own two-step REST model. First, the bytes become an
+unattached `Attachment` authored by the caller, identified by Redmine's upload
+token (`<id>.<digest>`). Then `create_issue`, `update_issue`, or `add_issue_note`
+attaches it through an `uploads` argument (`token`, optional `filename`,
+`description`, `content_type`). Three write tools produce a token. They differ
+only in where the bytes come from:
+
+| Tool | Source of the bytes | Exposed when |
+|---|---|---|
+| `create_attachment_upload` | The client's own environment, sent to a short-lived upload URL | Write mode |
+| `upload_attachment_from_url` | A URL that the Redmine server downloads | Write mode and `url_upload_enabled` |
+| `upload_attachment_content` | Base64 in the tool arguments, at most 64 KiB decoded | Write mode |
+
+The first two keep file bytes out of the model's context. The third is a fallback
+for small generated files when the client cannot reach Redmine over HTTP.
+
+```mermaid
+sequenceDiagram
+  participant M as Model / MCP client
+  participant E as Client environment (shell, sandbox)
+  participant MC as McpController
+  participant UC as McpUploadsController
+  participant R as Redmine models
+
+  M->>MC: tools/call create_attachment_upload(filename)
+  MC-->>M: upload_url (signed ticket, 15 min)
+  M->>E: run an HTTP client on the local file
+  E->>UC: POST upload_url, application/octet-stream body
+  UC->>UC: verify ticket, endpoint and write mode, Origin
+  UC->>R: user active, upload permission, Attachment#save
+  UC-->>E: {token, filename, filesize}
+  M->>MC: tools/call add_issue_note(id, uploads: [{token}])
+  MC->>R: Issue#save_attachments, Issue#save
+```
+
+[`Uploads`](lib/redmine_mcp/uploads.rb) owns creating and attaching attachments,
+[`UploadTicket`](lib/redmine_mcp/upload_ticket.rb) owns the upload URL's
+signed ticket, and [`UrlFetcher`](lib/redmine_mcp/url_fetcher.rb) owns the
+server-side download policy.
+
+**Creating an upload** uses the gate Redmine applies to `attachments#upload`.
+That action belongs to permissions such as `add_issues`, `edit_issues`, and
+`add_issue_notes`. The check is `User#allowed_to?` on the action, so an OAuth
+token's scopes narrow it the same way they narrow every other check. The upload
+tools declare no single permission, so the controller issues no scope challenge
+for them. Discovery hides them from a user whose role grants no upload
+permission, and execution re-checks with the token's scopes. Redmine's
+`Attachment` validations enforce the size limit (`attachment_max_size`) and the
+allowed and denied extensions on every path.
+
+**Attaching** runs under the target tool's own permission. For an existing issue
+it also requires `Issue#attachments_addable?`. A token must name an unattached
+attachment authored by the caller. Core's `Attachment.find_by_token` does not
+check the author, and a token is only `id` plus the content's SHA-256, which
+anyone who knows the file can derive. The plugin therefore adds the author check
+and returns the same error for an unknown, attached, or foreign token. Attachments
+that fail validation when renamed are reported instead of being silently dropped.
+On `update_issue` and `add_issue_note`, the journal records the added files.
+Uploads that are never attached are removed by Redmine's
+`redmine:attachments:prune` task.
+
+**The upload URL** is `POST /mcp/uploads?upload_token=…`, with the raw file as an
+`application/octet-stream` body. The ticket is a purpose-scoped
+`ActiveSupport::MessageVerifier` signature that expires after 15 minutes. It
+covers the user id, the filename, the content type, and the OAuth scopes in force
+when the ticket was issued. The endpoint accepts no other credential: no cookie,
+no API key, no bearer token. At upload time it requires the MCP endpoint to be
+enabled and read-only mode to be off. It also rejects a disallowed `Origin`
+exactly like `/mcp`. It then re-resolves the user as active and re-checks the
+upload permission with the recorded scopes. It rejects a declared
+`Content-Length` above `attachment_max_size` before reading the body.
+
+A ticket is not single-use. Within its lifetime it can create further unattached
+uploads for the same user, but nothing else: attaching still requires an
+authenticated MCP call as that user. The `upload_token` parameter is added to
+Rails' parameter filter so the ticket does not reach request logs. The URL is
+built from the base URL of the `/mcp` request that issued it. A client environment
+without network access to Redmine, such as some hosted code sandboxes, cannot use
+it and falls back to one of the other two tools.
+
+**Server-side download** (`upload_attachment_from_url`) makes the Redmine server
+an HTTP client, so it is an SSRF surface. Three settings, all with fail-closed
+defaults, control it:
+
+- `url_upload_enabled` (off): when off, the tool is hidden and refused.
+- `url_upload_allowed_hosts` (empty): an optional list of exact host names or
+  `*.example.com` subdomain patterns. An empty list admits any host.
+- `url_upload_allow_private` (off): when off, every address that is not
+  publicly routable is refused. This covers loopback, RFC 1918 private, link-local
+  (including cloud metadata at `169.254.169.254`), CGNAT, unique-local IPv6,
+  multicast, reserved and unspecified addresses, and their IPv4-mapped IPv6 forms.
+
+Only `https` URLs are fetched. The host is resolved once, every resolved address
+is checked, and the connection goes to the vetted address while TLS still
+verifies the original host name, so DNS rebinding cannot swap the target after the
+check. At most three redirects are followed, and each hop is validated again
+(scheme, host list, address). No cookies, credentials, or Redmine headers are
+sent. The body is streamed into a tempfile under connect and read timeouts and is
+aborted as soon as it exceeds `attachment_max_size`.
+
+Policy refusals name their reason. Connection-level failures return one uniform
+message, so the tool cannot be used to scan ports. The URL is never logged,
+because download links often embed a secret. Only links that work without the
+user's own credentials can succeed, such as pre-signed download URLs.
+
 ### Error ownership
 
 Errors retain one owner across the controller-to-SDK seam:
@@ -254,6 +364,7 @@ Errors retain one owner across the controller-to-SDK seam:
 | SDK input-schema rejection | SDK tool result with `isError: true`; the tool body does not run |
 | Expected `ToolError` or `PermissionError` from an executing tool | `Tools::Base#run`; `MCP::Tool::Response` encoded as a result with `isError: true` |
 | Unexpected exception from an executing tool | SDK internal error (`-32603`); `McpServer` reports details to the Redmine log and the response stays sanitized |
+| Upload URL request with a disabled endpoint, read-only mode, a rejected Origin, a bad ticket, a lost permission, a wrong content type, an oversized body, or an invalid attachment | `McpUploadsController`; plain HTTP 403, 401, 415, 413, or 422 with a JSON `error`, outside JSON-RPC |
 
 Do not recreate SDK-owned envelopes or codes in plugin code. `JsonRpc` is limited
 to errors that must be returned before `MCP::Server#handle` can safely run and to
@@ -349,6 +460,19 @@ emitted only after authorization has already permitted disclosure. Active format
 (HTML, SVG) are never returned as interpretable text. The controller's OAuth
 step-up for this read challenges the request-level `:view_issues` scope only, so
 it never depends on, or reveals, a specific attachment.
+
+### Uploads are bound to their author, and server downloads are policy-gated
+
+An upload token is attached only when its attachment is still unattached and was
+authored by the calling user. Every other token gets the same refusal. An upload
+URL ticket is signed, expires after 15 minutes, and is bound to one user and the
+OAuth scopes that user's token held. At upload time the endpoint re-checks the
+endpoint switch, read-only mode, Origin, the user's active state, and the upload
+permission. `upload_attachment_from_url` stays hidden and refused unless an
+administrator enables it. It refuses non-`https` URLs and hosts outside a
+configured allowlist. Unless explicitly allowed, it refuses internal addresses,
+checked on every resolved address and every redirect hop, and connects only to the
+address it vetted.
 
 ### Discovery hides tools denied by policy
 

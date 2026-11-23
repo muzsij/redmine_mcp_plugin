@@ -33,7 +33,17 @@ module RedmineMcp
       # Dynamic client registration (RFC 7591). Off by default: when on it opens
       # an unauthenticated endpoint where any caller can register an OAuth2
       # client, so turning it on must be an explicit decision.
-      'dcr_enabled' => 'false'
+      'dcr_enabled' => 'false',
+
+      # Server-side download for upload_attachment_from_url. Off by default: it
+      # makes the Redmine server fetch caller-supplied URLs (see UrlFetcher).
+      'url_upload_enabled' => 'false',
+      # Comma/newline separated host names, or *.example.com for subdomains.
+      # Empty admits any host.
+      'url_upload_allowed_hosts' => '',
+      # Off by default, so loopback, private, link-local and other internal
+      # addresses (cloud metadata included) stay unreachable.
+      'url_upload_allow_private' => 'false'
     }.freeze
 
     ABSOLUTE_MAX_RESULTS = 1000
@@ -66,6 +76,12 @@ module RedmineMcp
       def basic_auth?   = bool('auth_basic')
       def session_auth? = bool('auth_session')
       def dcr_enabled?  = bool('dcr_enabled')
+      def url_upload_enabled?       = bool('url_upload_enabled')
+      def url_upload_allow_private? = bool('url_upload_allow_private')
+
+      def url_upload_allowed_hosts
+        all['url_upload_allowed_hosts'].to_s.split(/[,\s]+/).map(&:strip).reject(&:blank?).map(&:downcase)
+      end
 
       def max_results
         n = all['max_results'].to_i
@@ -76,6 +92,14 @@ module RedmineMcp
 
       def allowed_origins
         all['allowed_origins'].to_s.split(/[,\s]+/).map(&:strip).reject(&:blank?)
+      end
+
+      # The Origin policy shared by /mcp and /mcp/uploads. An absent Origin, the
+      # usual case outside a browser, is accepted; a supplied one must be this
+      # Redmine's own origin or an administrator-listed one.
+      def origin_allowed?(origin, base_url)
+        origin = origin.presence
+        origin.nil? || origin == base_url || allowed_origins.include?(origin)
       end
 
       # Lets the caller distinguish a configuration error from bad credentials.

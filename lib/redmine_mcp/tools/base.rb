@@ -114,7 +114,8 @@ module RedmineMcp
         # scopes travel in that context; this instantiates a per-request runner
         # so the instance-side helpers keep reading them off `@user`/`@auth`.
         def call(server_context:, **args)
-          new(server_context[:user], server_context[:auth] || {}).run(args)
+          new(server_context[:user], server_context[:auth] || {},
+              base_url: server_context[:base_url]).run(args)
         end
 
         # Annotations the SDK emits. Derived from `write`/`destructive` so there
@@ -176,10 +177,13 @@ module RedmineMcp
       # `attr_writer :oauth_scope` on User with no matching reader, so the
       # granted scopes cannot be read back off the model once set -- the plugin
       # has to remember them itself.
-      def initialize(user, auth = {})
+      # +base_url+ is the root URL the caller reached /mcp through, for tools that
+      # hand back a URL the same client must be able to reach.
+      def initialize(user, auth = {}, base_url: nil)
         super()
         @user = user
         @auth = auth || {}
+        @base_url = base_url
       end
 
       attr_reader :user, :auth
@@ -187,6 +191,10 @@ module RedmineMcp
       def auth_mode    = @auth[:mode]
       def oauth?       = @auth[:mode] == :oauth2
       def oauth_scopes = @auth[:scopes]
+
+      def public_base_url
+        @base_url.presence || "#{Setting.protocol}://#{Setting.host_name}"
+      end
 
       # Runs one tool call and returns an `MCP::Tool::Response`. The SDK has
       # already validated arguments against the schema by this point, so this
@@ -242,6 +250,17 @@ module RedmineMcp
       # leak.
       def authorize!(permission, project)
         raise ToolError, 'You do not have permission to do that' unless user.allowed_to?(permission, project)
+      end
+
+      # Queues uploads on an existing issue. Core also requires
+      # Issue#attachments_addable? there, which applies per-tracker permissions
+      # that the tool's own permission gate does not.
+      def queue_uploads!(issue, uploads)
+        unless issue.attachments_addable?(user)
+          raise ToolError, 'You do not have permission to attach files to this issue'
+        end
+
+        Uploads.queue!(issue, user, uploads)
       end
 
       # Applies the administrator's ceiling and clamps to one in case a tool's

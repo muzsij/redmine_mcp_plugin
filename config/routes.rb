@@ -7,6 +7,10 @@ RedmineApp::Application.routes.draw do
   get    'mcp' => 'mcp#stream'
   delete 'mcp' => 'mcp#terminate'
 
+  # Upload URLs issued by create_attachment_upload; authenticated by their
+  # signed ticket alone (McpUploadsController).
+  post 'mcp/uploads' => 'mcp_uploads#create', as: :mcp_uploads
+
   # RFC 9728 defines both spellings of the protected-resource document: the
   # path-suffixed form and the plain form used by existing clients.
   get '.well-known/oauth-protected-resource'     => 'mcp_metadata#protected_resource'

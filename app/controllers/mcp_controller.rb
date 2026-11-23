@@ -70,7 +70,7 @@ class McpController < ApplicationController
       tools: tools,
       prompts: RedmineMcp::Prompts.all,
       resource_templates: RedmineMcp::Resources.templates,
-      server_context: { user: User.current, auth: @mcp_auth }
+      server_context: { user: User.current, auth: @mcp_auth, base_url: public_base_url }
     )
     render_rpc(server.handle(message.deep_symbolize_keys), :ok)
   end
@@ -102,10 +102,7 @@ class McpController < ApplicationController
   # unaffected. A browser sends one, which makes this an effective guard for
   # the cookie-authenticated mode.
   def verify_origin
-    origin = request.headers['Origin'].presence
-    return if origin.nil?
-    return if origin == request.base_url
-    return if RedmineMcp::Settings.allowed_origins.include?(origin)
+    return if RedmineMcp::Settings.origin_allowed?(request.headers['Origin'], request.base_url)
 
     render json: { error: 'Origin not allowed' }, status: :forbidden
   end
@@ -243,8 +240,11 @@ class McpController < ApplicationController
   end
 
   def oauth_protected_resource_url
-    base = request.base_url + (Redmine::Utils.relative_url_root.presence || '')
-    "#{base}/.well-known/oauth-protected-resource/mcp"
+    "#{public_base_url}/.well-known/oauth-protected-resource/mcp"
+  end
+
+  def public_base_url
+    request.base_url + (Redmine::Utils.relative_url_root.presence || '')
   end
 
   def render_rpc(payload, status)

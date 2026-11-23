@@ -5,18 +5,19 @@ module RedmineMcp
     class AddIssueNote < Base
       tool_name 'add_issue_note'
       title 'Add note to issue'
-      description 'Append a note (comment) to an existing issue.'
+      description 'Append a note (comment) to an existing issue, optionally attaching uploaded files.'
       permission :add_issue_notes
       write true
       input_schema(
         'type' => 'object',
         'properties' => {
           'id' => { 'type' => 'integer', 'description' => 'Issue id.' },
-          'notes' => { 'type' => 'string', 'description' => 'The note text.' },
+          'notes' => { 'type' => 'string', 'description' => 'The note text. Optional when uploads are given.' },
           'private' => { 'type' => 'boolean',
-                         'description' => 'Mark the note private. Requires the set_notes_private permission.' }
+                         'description' => 'Mark the note private. Requires the set_notes_private permission.' },
+          'uploads' => Uploads::SCHEMA
         },
-        'required' => %w[id notes],
+        'required' => %w[id],
         'additionalProperties' => false
       )
 
@@ -32,7 +33,8 @@ module RedmineMcp
         raise ToolError, "No visible issue with id #{arguments['id'].inspect}" if issue.nil?
 
         authorize!(:add_issue_notes, issue.project)
-        raise ToolError, 'notes must not be empty' if arguments['notes'].to_s.strip.empty?
+        uploads = arguments['uploads'].presence
+        raise ToolError, 'notes must not be empty' if arguments['notes'].to_s.strip.empty? && uploads.nil?
 
         # Issue delegates private_notes= to current_journal with allow_nil, so
         # initialize the journal first or the private flag is silently dropped.
@@ -42,9 +44,11 @@ module RedmineMcp
           authorize!(:set_notes_private, issue.project)
           issue.private_notes = true
         end
+        attached = uploads ? queue_uploads!(issue, uploads) : []
         raise ToolError, "Could not add note: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
-        { issue_id: issue.id, journal_id: issue.current_journal&.id, created_on: iso(issue.current_journal&.created_on) }
+        { issue_id: issue.id, journal_id: issue.current_journal&.id, created_on: iso(issue.current_journal&.created_on),
+          attachments: Uploads.summarize(attached) }
       end
     end
   end

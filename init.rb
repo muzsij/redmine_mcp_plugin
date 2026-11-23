@@ -32,3 +32,9 @@ Redmine::Plugin.register :redmine_mcp do
   settings default: RedmineMcp::Settings::DEFAULTS,
            partial: 'settings/redmine_mcp_settings'
 end
+
+# An upload URL's ticket is a bearer credential for creating uploads, so keep it
+# out of request logs. Mutated in place: the request environment may already
+# hold a reference to this array.
+filters = Rails.application.config.filter_parameters
+filters << RedmineMcp::UploadTicket::PARAM.to_sym unless filters.include?(RedmineMcp::UploadTicket::PARAM.to_sym)

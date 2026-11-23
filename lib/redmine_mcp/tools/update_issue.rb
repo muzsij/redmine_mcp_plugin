@@ -28,7 +28,8 @@ module RedmineMcp
                                  'description' => 'Parent issue id, or "none" to make it a top-level issue. ' \
                                                   'Requires the manage_subtasks permission.' },
           'notes' => { 'type' => 'string', 'description' => 'Optional comment to add with the update.' },
-          'private' => { 'type' => 'boolean', 'description' => 'Mark the note private when notes are provided.' }
+          'private' => { 'type' => 'boolean', 'description' => 'Mark the note private when notes are provided.' },
+          'uploads' => Uploads::SCHEMA
         },
         'required' => %w[id],
         'additionalProperties' => false
@@ -125,6 +126,17 @@ module RedmineMcp
           end
         end
 
+        # Core records history (changed attributes, added files) only through the
+        # current journal, so an update without notes still needs one, as
+        # IssuesController always opens it. It must exist before the attributes
+        # change, because it snapshots them; an empty journal is not saved.
+        issue.init_journal(user) unless issue.current_journal
+
+        attached = []
+        if (uploads = arguments['uploads'].presence)
+          attached = queue_uploads!(issue, uploads)
+        end
+
         unless attributes.empty?
           issue.safe_attributes = attributes
           ensure_applied!(issue, attributes)
@@ -143,7 +155,8 @@ module RedmineMcp
           fixed_version: issue.fixed_version&.name,
           parent_id: issue.parent_id,
           done_ratio: issue.done_ratio,
-          updated_on: iso(issue.updated_on)
+          updated_on: iso(issue.updated_on),
+          attachments: Uploads.summarize(attached)
         }
       end
     end

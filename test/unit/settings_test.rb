@@ -75,6 +75,30 @@ class RedmineMcpSettingsTest < ActiveSupport::TestCase
     with_settings_hash('allowed_origins' => '') { assert_equal [], S.allowed_origins }
   end
 
+  def test_url_upload_is_off_and_private_addresses_refused_by_default
+    with_settings_hash(S::DEFAULTS) do
+      assert_not S.url_upload_enabled?
+      assert_not S.url_upload_allow_private?
+      assert_equal [], S.url_upload_allowed_hosts
+    end
+  end
+
+  def test_url_upload_allowed_hosts_are_split_and_lowercased
+    with_settings_hash('url_upload_allowed_hosts' => "Files.Example.com\n*.cdn.example.net, other.test") do
+      assert_equal %w[files.example.com *.cdn.example.net other.test], S.url_upload_allowed_hosts
+    end
+  end
+
+  def test_origin_policy_accepts_absent_own_and_listed_origins_only
+    with_settings_hash('allowed_origins' => 'https://app.example') do
+      assert S.origin_allowed?(nil, 'https://redmine.example')
+      assert S.origin_allowed?('', 'https://redmine.example')
+      assert S.origin_allowed?('https://redmine.example', 'https://redmine.example')
+      assert S.origin_allowed?('https://app.example', 'https://redmine.example')
+      assert_not S.origin_allowed?('https://evil.example', 'https://redmine.example')
+    end
+  end
+
   def test_any_auth_mode_detects_all_modes_off
     with_settings_hash('auth_oauth2' => '0', 'auth_api_key' => '0', 'auth_basic' => '0', 'auth_session' => '0') do
       assert_not S.any_auth_mode?

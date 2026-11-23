@@ -288,6 +288,39 @@ class McpControllerTest < Redmine::ControllerTest
     assert_equal assignee.login, User.find(json_body['result']['structuredContent']['assigned_to_id']).login
   end
 
+  # Without a current journal Redmine records no history, so a field change
+  # with no notes used to leave the issue's history silent.
+  def test_update_issue_without_notes_records_history
+    enable_mcp('read_only' => '0')
+    issue = Issue.find(1)
+    old_subject = issue.subject
+
+    assert_difference -> { issue.journals.count }, 1 do
+      post_mcp rpc('tools/call', { 'name' => 'update_issue',
+                                   'arguments' => { 'id' => issue.id, 'subject' => 'Renamed without notes' } }),
+               api_key_headers(User.find(1))
+    end
+
+    assert_response :success
+    assert_not json_body['result']['isError']
+    journal = issue.journals.order(:id).last
+    assert_equal User.find(1), journal.user
+    detail = journal.details.find_by(property: 'attr', prop_key: 'subject')
+    assert_equal [old_subject, 'Renamed without notes'], [detail.old_value, detail.value]
+  end
+
+  def test_update_issue_without_changes_records_no_empty_history
+    enable_mcp('read_only' => '0')
+    issue = Issue.find(1)
+
+    assert_no_difference -> { issue.journals.count } do
+      post_mcp rpc('tools/call', { 'name' => 'update_issue',
+                                   'arguments' => { 'id' => issue.id, 'subject' => issue.subject } }),
+               api_key_headers(User.find(1))
+    end
+    assert_not json_body['result']['isError']
+  end
+
   # --- assignment ---------------------------------------------------------
 
   # A Group is a Principal with no login, so `assigned_to` could never resolve

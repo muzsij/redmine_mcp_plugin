@@ -66,3 +66,22 @@
     <em class="info"><%= l('redmine_mcp.settings.dcr_enabled_hint') %></em>
   </p>
 </fieldset>
+
+<fieldset class="box">
+  <legend><%= l('redmine_mcp.settings.section_uploads') %></legend>
+  <p><em class="info"><%= l('redmine_mcp.settings.uploads_intro') %></em></p>
+  <% %w[url_upload_enabled url_upload_allow_private].each do |key| %>
+    <p>
+      <label for="settings_<%= key %>"><%= l("redmine_mcp.settings.#{key}") %></label>
+      <%= hidden_field_tag "settings[#{key}]", '0' %>
+      <%= check_box_tag "settings[#{key}]", '1', checked.call(key), id: "settings_#{key}" %>
+      <em class="info"><%= l("redmine_mcp.settings.#{key}_hint") %></em>
+    </p>
+  <% end %>
+  <p>
+    <label for="settings_url_upload_allowed_hosts"><%= l('redmine_mcp.settings.url_upload_allowed_hosts') %></label>
+    <%= text_area_tag 'settings[url_upload_allowed_hosts]', settings[:url_upload_allowed_hosts], rows: 3, cols: 50,
+                      id: 'settings_url_upload_allowed_hosts' %>
+    <em class="info"><%= l('redmine_mcp.settings.url_upload_allowed_hosts_hint') %></em>
+  </p>
+</fieldset>
