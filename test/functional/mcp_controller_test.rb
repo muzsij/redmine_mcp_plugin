@@ -324,7 +324,7 @@ class McpControllerTest < Redmine::ControllerTest
     Role.find(1).add_permission! :view_private_notes
     Journal.find(1).update_columns(user_id: 2, private_notes: false)
     Journal.find(2).update_columns(user_id: 1, private_notes: true)
-    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+    headers = oauth_headers(User.find(2), scopes: 'view_project view_issues')
 
     %w[updated_by last_updated_by].each do |filter|
       post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
@@ -355,7 +355,7 @@ class McpControllerTest < Redmine::ControllerTest
     Role.find(1).add_permission! :view_private_notes
     Journal.find(1).update_columns(user_id: 2, private_notes: false)
     Journal.find(2).update_columns(user_id: 1, private_notes: true)
-    headers = oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+    headers = oauth_headers(User.find(2), scopes: 'view_project view_issues view_private_notes')
 
     %w[updated_by last_updated_by].each do |filter|
       { '=' => [1], '!' => [] }.each do |operator, expected|
@@ -585,7 +585,7 @@ class McpControllerTest < Redmine::ControllerTest
 
     post_mcp rpc('tools/call', { 'name' => 'list_versions',
                                'arguments' => { 'project' => 'ecookbook', 'include_time_totals' => true } }),
-             oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+             oauth_headers(User.find(2), scopes: 'view_project view_issues view_time_entries')
 
     assert_response :success
     item = json_body.dig('result', 'structuredContent', 'versions').find { |row| row['id'] == version.id }
