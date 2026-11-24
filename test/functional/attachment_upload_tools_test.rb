@@ -139,7 +139,7 @@ class RedmineMcpAttachmentUploadToolsTest < ActiveSupport::TestCase
     assert_not result[:isError], result.inspect
     url = URI.parse(result[:structuredContent][:upload_url])
     assert_equal 'https://redmine.test/mcp/uploads', "#{url.scheme}://#{url.host}#{url.path}"
-    ticket = RedmineMcp::UploadTicket.verify(CGI.parse(url.query)['upload_token'].first)
+    ticket = RedmineMcp::UploadTicket.verify(URI.decode_www_form(url.query).to_h['upload_token'])
     assert_equal [2, 'report.pdf', 'application/pdf', nil],
                  [ticket.user_id, ticket.filename, ticket.content_type, ticket.oauth_scopes]
   end
