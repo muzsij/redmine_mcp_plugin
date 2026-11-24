@@ -81,7 +81,7 @@ module RedmineMcp
 
       credentials = ActionController::HttpAuthentication::Basic.decode_credentials(@request).split(':', 2)
       username, password = credentials[0].to_s, credentials[1].to_s
-      return nil if username.blank?
+      return failure('Invalid credentials', :unauthorized) if username.blank?
 
       user = User.try_to_login(username, password)
 

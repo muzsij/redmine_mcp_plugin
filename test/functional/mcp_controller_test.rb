@@ -132,6 +132,118 @@ class McpControllerTest < Redmine::ControllerTest
     assert_response :unauthorized
   end
 
+  def test_invalid_bearer_does_not_fall_back_to_a_valid_api_key
+    post_mcp rpc('tools/list'), api_key_headers(User.find(2)).merge('Authorization' => 'Bearer invalid')
+
+    assert_response :unauthorized
+  end
+
+  def test_valid_basic_credentials_authenticate_the_caller
+    enable_mcp('auth_basic' => '1')
+    header = ActionController::HttpAuthentication::Basic.encode_credentials('jsmith', 'jsmith')
+
+    post_mcp rpc('tools/call', { 'name' => 'whoami', 'arguments' => {} }), 'Authorization' => header
+
+    assert_response :success
+    assert_equal 2, json_body.dig('result', 'structuredContent', 'id')
+  end
+
+  def test_basic_password_is_refused_when_two_factor_authentication_is_active
+    enable_mcp('auth_basic' => '1')
+    User.find(2).update_column(:twofa_scheme, 'totp')
+    header = ActionController::HttpAuthentication::Basic.encode_credentials('jsmith', 'jsmith')
+
+    post_mcp rpc('tools/list'), 'Authorization' => header
+
+    assert_response :unauthorized
+    assert_match(/two-factor/, json_body['error'])
+  end
+
+  def test_basic_password_is_refused_when_a_password_change_is_required
+    enable_mcp('auth_basic' => '1')
+    User.find(2).update_column(:must_change_passwd, true)
+    header = ActionController::HttpAuthentication::Basic.encode_credentials('jsmith', 'jsmith')
+
+    post_mcp rpc('tools/list'), 'Authorization' => header
+
+    assert_response :forbidden
+  end
+
+  def test_invalid_basic_credentials_do_not_fall_back_to_a_valid_session
+    enable_mcp('auth_basic' => '1', 'auth_session' => '1')
+    user = User.find(2)
+    @request.session[:user_id] = user.id
+    @request.session[:tk] = user.generate_session_token
+    header = ActionController::HttpAuthentication::Basic.encode_credentials('', 'invalid')
+
+    post_mcp rpc('tools/list'), 'Authorization' => header, 'Origin' => 'http://test.host'
+
+    assert_response :unauthorized
+  end
+
+  def test_session_authentication_works_when_the_rest_api_is_disabled
+    enable_mcp('auth_session' => '1')
+    Setting.rest_api_enabled = '0'
+    user = User.find(2)
+    @request.session[:user_id] = user.id
+    @request.session[:tk] = user.generate_session_token
+
+    post_mcp rpc('tools/call', { 'name' => 'whoami', 'arguments' => {} }), 'Origin' => 'http://test.host'
+
+    assert_response :success
+    assert_equal 'session', json_body.dig('result', 'structuredContent', 'authentication_mode')
+    assert_equal user.id, json_body.dig('result', 'structuredContent', 'id')
+  end
+
+  def test_session_credentials_are_refused_when_the_mode_is_disabled
+    user = User.find(2)
+    @request.session[:user_id] = user.id
+    @request.session[:tk] = user.generate_session_token
+
+    post_mcp rpc('tools/list'), 'Origin' => 'http://test.host'
+
+    assert_response :unauthorized
+  end
+
+  def test_foreign_origin_cannot_use_session_authentication
+    enable_mcp('auth_session' => '1')
+    user = User.find(2)
+    @request.session[:user_id] = user.id
+    @request.session[:tk] = user.generate_session_token
+
+    post_mcp rpc('tools/list'), 'Origin' => 'https://evil.example'
+
+    assert_response :forbidden
+    assert_equal 'Origin not allowed', json_body['error']
+  end
+
+  def test_revoked_oauth_tokens_are_refused
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+    Doorkeeper::AccessToken.last.revoke
+
+    post_mcp rpc('tools/list'), headers
+
+    assert_response :unauthorized
+  end
+
+  def test_expired_oauth_tokens_are_refused
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+    Doorkeeper::AccessToken.last.update_columns(created_at: 3.hours.ago, expires_in: 3600)
+
+    post_mcp rpc('tools/list'), headers
+
+    assert_response :unauthorized
+  end
+
+  def test_oauth_tokens_for_locked_users_are_refused
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+    User.find(2).lock!
+
+    post_mcp rpc('tools/list'), headers
+
+    assert_response :unauthorized
+  end
+
   def test_malformed_json_is_a_parse_error
     post_mcp '{not json', api_key_headers(User.find(2))
     assert_response :bad_request
