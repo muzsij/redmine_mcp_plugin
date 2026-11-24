@@ -292,6 +292,133 @@ class McpControllerTest < Redmine::ControllerTest
     assert_includes json_body.dig('result', 'structuredContent', 'journals').map { |journal| journal['id'] }, 2
   end
 
+  def test_notes_filters_do_not_probe_private_notes_without_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Confidential journal')
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+
+    { '~' => [], '!~' => [1] }.each do |operator, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       'notes' => { 'operator' => operator, 'values' => ['Confidential journal'] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+    end
+  end
+
+  def test_notes_filters_match_private_notes_with_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Confidential journal')
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'notes' => { 'operator' => '~', 'values' => ['Confidential journal'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_journal_author_filters_ignore_private_notes_without_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(user_id: 2, private_notes: false)
+    Journal.find(2).update_columns(user_id: 1, private_notes: true)
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+
+    %w[updated_by last_updated_by].each do |filter|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       filter => { 'operator' => '=', 'values' => [User.find(1).name] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal [], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, filter
+    end
+  end
+
+  def test_last_updated_by_uses_the_latest_scope_visible_journal
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(user_id: 2, private_notes: false)
+    Journal.find(2).update_columns(user_id: 1, private_notes: true)
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                     'last_updated_by' => { 'operator' => '=', 'values' => ['me'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_journal_author_filters_can_match_private_notes_with_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(user_id: 2, private_notes: false)
+    Journal.find(2).update_columns(user_id: 1, private_notes: true)
+    headers = oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    %w[updated_by last_updated_by].each do |filter|
+      { '=' => [1], '!' => [] }.each do |operator, expected|
+        post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+          'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                         filter => { 'operator' => operator, 'values' => [User.find(1).name] } }
+        } }), headers
+
+        assert_response :success
+        assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, filter
+      end
+    end
+  end
+
+  def test_notes_filters_can_match_the_callers_own_private_notes_without_the_scope
+    Journal.find(2).update_columns(private_notes: true, notes: 'My private journal')
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'notes' => { 'operator' => '~', 'values' => ['My private journal'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_native_watcher_filter_does_not_probe_other_watchers_without_the_oauth_scope
+    Role.find(1).add_permission! :view_issue_watchers
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+
+    { '=' => [], '!' => [2] }.each do |operator, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['2'] },
+                       'watcher_id' => { 'operator' => operator, 'values' => ['3'] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+    end
+  end
+
+  def test_native_watcher_filter_matches_other_watchers_with_the_oauth_scope
+    Role.find(1).add_permission! :view_issue_watchers
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['2'] },
+                     'watcher_id' => { 'operator' => '=', 'values' => ['3'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues view_issue_watchers')
+
+    assert_response :success
+    assert_equal [2], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_watcher_filter_can_match_the_caller_without_the_watchers_scope
+    Watcher.create!(watchable_type: 'Issue', watchable_id: 1, user_id: 2)
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'watcher' => { 'operator' => '=', 'values' => ['me'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
   def test_issue_spent_hours_only_include_visible_time_entries
     Role.update_all(time_entries_visibility: 'own')
 
@@ -314,6 +441,138 @@ class McpControllerTest < Redmine::ControllerTest
 
     assert_response :success
     assert_equal 154.25, json_body.dig('result', 'structuredContent', 'spent_hours').to_f
+  end
+
+  def test_spent_time_filter_only_counts_visible_time_entries
+    Role.update_all(time_entries_visibility: 'own')
+    headers = oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+
+    [['=', ['4.25'], [1]], ['>=', ['100'], []], ['<=', ['5'], [1]],
+     ['><', ['4', '5'], [1]], ['*', [], [1]], ['!*', [], []]].each do |operator, values, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       'spent_time' => { 'operator' => operator, 'values' => values.presence }.compact }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, operator
+    end
+  end
+
+  def test_spent_time_filter_can_match_all_hours_when_the_role_permits_them
+    Role.update_all(time_entries_visibility: 'all')
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                     'spent_time' => { 'operator' => '>=', 'values' => ['100'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_spent_time_equality_compares_the_rounded_total
+    Role.update_all(time_entries_visibility: 'all')
+    entries = TimeEntry.where(issue_id: 1).order(:id).to_a
+    assert_operator entries.size, :>=, 2
+    entries[0].update_column(:hours, 0.1)
+    entries[1].update_column(:hours, 0.2)
+    entries.drop(2).each(&:delete)
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                     'spent_time' => { 'operator' => '=', 'values' => ['0.3'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  # Redmine's search fetcher cannot apply OAuth narrowing to private notes, so
+  # the filter must not be offered while the token hides notes the roles allow.
+  def test_full_text_filter_is_withheld_when_the_token_narrows_private_notes
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Zebracorn secret')
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'any_searchable' => { 'operator' => '~', 'values' => ['Zebracorn'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert json_body.dig('result', 'isError')
+    assert_match(/Unknown or unavailable issue filter "any_searchable"/, json_body['result']['content'].first['text'])
+  end
+
+  def test_full_text_filter_matches_private_notes_with_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Zebracorn secret')
+
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'any_searchable' => { 'operator' => '~', 'values' => ['Zebracorn'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+  end
+
+  def test_full_text_filter_stays_available_when_roles_already_hide_private_notes
+    Role.all.each { |role| role.remove_permission! :view_private_notes }
+    Journal.find(1).update_columns(private_notes: true, notes: 'Zebracorn secret')
+    Journal.find(2).update_columns(private_notes: false, notes: 'Quokka public')
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+
+    { 'Zebracorn' => [], 'Quokka' => [1] }.each do |word, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'any_searchable' => { 'operator' => '~', 'values' => [word] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, word
+    end
+  end
+
+  def test_history_operators_ignore_private_journals_without_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_column(:private_notes, true)
+    Issue.find(1).update_column(:status_id, 3)
+    headers = oauth_headers(User.find(2), scopes: 'view_issues')
+
+    { 'cf' => [], 'ev' => [], '!ev' => [1] }.each do |operator, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       'status_id' => { 'operator' => operator, 'values' => ['1'] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, operator
+    end
+  end
+
+  def test_history_operators_match_private_journals_with_the_oauth_scope
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_column(:private_notes, true)
+    Issue.find(1).update_column(:status_id, 3)
+    headers = oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    { 'cf' => [1], 'ev' => [1], '!ev' => [] }.each do |operator, expected|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       'status_id' => { 'operator' => operator, 'values' => ['1'] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal expected, json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, operator
+    end
+  end
+
+  def test_has_been_operator_still_matches_the_current_value
+    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                     'status_id' => { 'operator' => 'ev', 'values' => ['1'] } }
+    } }), oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
   end
 
   def test_version_time_totals_only_include_visible_records

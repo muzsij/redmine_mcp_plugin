@@ -266,7 +266,7 @@ module RedmineMcp
           authorize!(:view_issues, project)
         end
 
-        issue_query = IssueQuery.new(name: '_', project: project)
+        issue_query = ScopedIssueQuery.new(name: '_', project: project)
         # IssueQuery defaults to open issues. MCP search defaults to all statuses; an explicit
         # status/status_id filter below overwrites this native status filter.
         issue_query.add_filter('status_id', '*')

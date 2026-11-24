@@ -450,6 +450,17 @@ visibility of a group does not authorize every member record. Issue and version
 time totals are computed from visible issues and time entries rather than raw
 model aggregates.
 
+[`ScopedIssueQuery`](lib/redmine_mcp/scoped_issue_query.rb) is an unsaved,
+plugin-local `IssueQuery` subclass used only by `search_issues`. Its native filter
+hooks apply OAuth narrowing to journal text, journal authors, watchers, and the
+journal-detail history operators (`ev`, `!ev`, `cf`), and time-entry visibility to
+spent-time predicates. Redmine's underlying role-only SQL conditions and raw time
+sums cannot enforce those constraints alone. Positive and negative filters use the
+same visible records, so negation cannot become an existence oracle. Redmine's
+search fetcher behind `any_searchable` exposes no hook for that narrowing, so the
+query withholds that filter when an OAuth token lacks `view_private_notes` that a
+role would otherwise grant. The host's query classes and models are not patched.
+
 Invisible and nonexistent records must remain indistinguishable. Helpers such as
 `Tools::Base#fetch_project` and tools such as `GetIssue` return the same not-found
 wording for both cases, preventing existence probes.

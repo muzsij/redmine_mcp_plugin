@@ -183,6 +183,14 @@ assignees/authors, status, dates, custom fields, and native numeric IDs. Conditi
 are combined with AND. It searches all statuses by default; use `status: "open"`
 or a native status filter to limit the result. Existing top-level filters and
 `sort` remain supported and combine with the native filters.
+Journal and watcher filters, including the history operators ("has been", "has
+never been", "changed from"), use only records visible with the caller's roles
+and OAuth scopes; private notes and other users' watches require their
+respective read scopes. The native full-text `any_searchable` filter is
+unavailable to an OAuth token without `view_private_notes` when the caller's
+roles would grant it, because Redmine's search cannot apply the token's
+narrowing. Spent-time filters and issue/version totals count only visible
+records.
 
 Tool arguments are validated against their declared schemas. The paginated
 tools (`list_projects`, `search_issues`, `list_wiki_pages`, `list_users`, and `list_time_entries`)
