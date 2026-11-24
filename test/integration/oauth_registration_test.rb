@@ -108,4 +108,18 @@ class OauthRegistrationTest < Redmine::IntegrationTest
     end
     assert_not_equal 201, response.status
   end
+
+  def test_loopback_custom_scheme_redirect_is_refused
+    assert_no_difference 'Doorkeeper::Application.count' do
+      register public_client_body('custom://127.0.0.1/callback')
+    end
+    assert_response :unauthorized
+  end
+
+  def test_redirect_with_embedded_credentials_is_refused
+    assert_no_difference 'Doorkeeper::Application.count' do
+      register public_client_body('https://user:secret@app.example.com/callback')
+    end
+    assert_response :unauthorized
+  end
 end

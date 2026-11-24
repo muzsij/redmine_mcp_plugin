@@ -99,7 +99,11 @@ module RedmineMcp
 
       def acceptable_redirect_uri?(raw)
         uri = URI.parse(raw.to_s)
-        uri.scheme == 'https' || loopback?(uri)
+        # A loopback host relaxes TLS only; it must not admit arbitrary schemes
+        # or scheme-relative redirects. Credentials and fragments have no place
+        # in an OAuth callback URI.
+        uri.is_a?(URI::HTTP) && uri.host.present? && uri.userinfo.nil? && uri.fragment.nil? &&
+          (uri.is_a?(URI::HTTPS) || loopback?(uri))
       rescue URI::InvalidURIError
         false
       end

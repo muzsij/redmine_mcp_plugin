@@ -519,7 +519,9 @@ setting is enabled.
 loads `doorkeeper-openid_connect` during route drawing, avoiding the gem's early
 controller binding. It exposes only the gem's registration controller and admits
 public and secret-based clients, using exactly the token endpoint auth methods the
-metadata advertises, whose redirect URIs are all HTTPS or loopback. Refusals are
+metadata advertises. Redirects are restricted to absolute HTTP(S) URIs with a
+host, without embedded credentials or fragments; HTTP is allowed only for
+loopback hosts. Refusals are
 logged with their reason, since the client only sees a generic 401. Its gate requires the
 endpoint, OAuth mode, and dynamic registration setting to be enabled. Because the
 lazy load happens after production eager-loads the access grant model, it also

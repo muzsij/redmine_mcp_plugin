@@ -68,6 +68,19 @@ class RedmineMcpDcrPolicyTest < ActiveSupport::TestCase
     assert_not DCR.acceptable_redirect_uri?('')
   end
 
+  def test_loopback_redirects_cannot_use_other_schemes_or_omit_the_scheme
+    %w[ftp://localhost/cb custom://127.0.0.1/cb //localhost/cb].each do |uri|
+      assert_not DCR.acceptable_redirect_uri?(uri), uri
+    end
+  end
+
+  def test_redirects_require_a_host_and_cannot_embed_credentials_or_fragments
+    %w[https:/callback https:callback https://user:secret@app.example/cb
+       https://app.example/cb#fragment http://localhost/cb#fragment].each do |uri|
+      assert_not DCR.acceptable_redirect_uri?(uri), uri
+    end
+  end
+
   def test_every_redirect_uri_must_pass_and_at_least_one_is_required
     assert DCR.redirect_uris_acceptable?(params(redirect_uris: ['https://a.example/cb', 'http://localhost/cb']))
     assert_not DCR.redirect_uris_acceptable?(params(redirect_uris: ['https://a.example/cb', 'http://evil.example/cb']))
