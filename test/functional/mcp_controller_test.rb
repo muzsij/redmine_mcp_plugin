@@ -479,18 +479,26 @@ class McpControllerTest < Redmine::ControllerTest
     entries[1].update_column(:hours, 0.2)
     entries.drop(2).each(&:delete)
 
-    post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
-      'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
-                     'spent_time' => { 'operator' => '=', 'values' => ['0.3'] } }
-    } }), oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+    headers = oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+    values = %w[0.3]
+    # Redmine 7 types spent_time as :hour and accepts durations.
+    values << '0:18' if IssueQuery.operators_by_filter_type.key?(:hour)
 
-    assert_response :success
-    assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }
+    values.each do |value|
+      post_mcp rpc('tools/call', { 'name' => 'search_issues', 'arguments' => {
+        'filters' => { 'issue_id' => { 'operator' => '=', 'values' => ['1'] },
+                       'spent_time' => { 'operator' => '=', 'values' => [value] } }
+      } }), headers
+
+      assert_response :success
+      assert_equal [1], json_body.dig('result', 'structuredContent', 'issues').map { |issue| issue['id'] }, value
+    end
   end
 
-  # Redmine's search fetcher cannot apply OAuth narrowing to private notes, so
-  # the filter must not be offered while the token hides notes the roles allow.
-  def test_full_text_filter_is_withheld_when_the_token_narrows_private_notes
+  # Redmine 6.1's search fetcher cannot apply OAuth narrowing to private notes,
+  # so the filter is withheld there. Redmine 7 narrows the search itself and
+  # keeps the filter, which then must not match the hidden note.
+  def test_full_text_filter_does_not_match_private_notes_without_the_oauth_scope
     Role.find(1).add_permission! :view_private_notes
     Journal.find(1).update_columns(private_notes: true, notes: 'Zebracorn secret')
 
@@ -499,8 +507,12 @@ class McpControllerTest < Redmine::ControllerTest
     } }), oauth_headers(User.find(2), scopes: 'view_issues')
 
     assert_response :success
-    assert json_body.dig('result', 'isError')
-    assert_match(/Unknown or unavailable issue filter "any_searchable"/, json_body['result']['content'].first['text'])
+    result = json_body['result']
+    if result['isError']
+      assert_match(/Unknown or unavailable issue filter "any_searchable"/, result['content'].first['text'])
+    else
+      assert_equal [], result.dig('structuredContent', 'issues')
+    end
   end
 
   def test_full_text_filter_matches_private_notes_with_the_oauth_scope

@@ -37,7 +37,9 @@ module RedmineMcp
     end
 
     def sql_for_spent_time_field(_field, operator, values)
-      first, second = values.first.to_f, values.second.to_f
+      # Redmine 7 parses filter values as durations ("1:30", "1h30"). The
+      # trailing to_f keeps the interpolated SQL numeric for unparsable input.
+      first, second = values.first.to_s.to_hours.to_f, values.second.to_s.to_hours.to_f
       comparison = case operator
                    when '=', '>=', '<=' then "#{operator} #{first}"
                    when '><' then "BETWEEN #{first} AND #{second}"
@@ -74,10 +76,10 @@ module RedmineMcp
 
     protected
 
-    # Redmine's search fetcher matches journal text through a role-only
-    # private-notes condition that cannot be narrowed from here. Withhold the
-    # filter when the OAuth token removes a private-notes permission the roles
-    # would otherwise grant.
+    # Before Redmine 7, the search fetcher matches journal text through a
+    # role-only private-notes condition that cannot be narrowed from here.
+    # Withhold the filter when the OAuth token removes a private-notes
+    # permission the roles would otherwise grant.
     def initialize_available_filters
       super
       delete_available_filter('any_searchable') if oauth_hides_private_notes?
@@ -85,7 +87,9 @@ module RedmineMcp
 
     private
 
-    # Project.allowed_to_condition is the role-only check the fetcher applies.
+    # Project.allowed_to_condition is the check the fetcher applies. It is
+    # role-only before Redmine 7, which narrows it by the OAuth scope itself,
+    # so there this finds nothing and the filter stays available.
     def oauth_hides_private_notes?
       user = User.current
       return false unless user.authorized_by_oauth?
