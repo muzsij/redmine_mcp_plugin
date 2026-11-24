@@ -63,8 +63,11 @@ module RedmineMcp
           updated_on: iso(version.updated_on)
         }
         if include_totals
-          data[:estimated_hours] = version.estimated_hours
-          data[:spent_hours] = version.spent_hours
+          # A shared version can include invisible issues and time entries;
+          # permission on the requested project does not make those readable.
+          data[:estimated_hours] = version.fixed_issues.visible(user).sum(:estimated_hours).to_f
+          data[:spent_hours] = TimeEntry.visible(user).joins(:issue)
+                                       .where(issues: { fixed_version_id: version.id }).sum(:hours).to_f
         end
         data
       end

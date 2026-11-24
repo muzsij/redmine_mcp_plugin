@@ -5,7 +5,8 @@ require File.expand_path('../test_helper', __dir__)
 class McpControllerTest < Redmine::ControllerTest
   tests McpController
   fixtures :projects, :users, :email_addresses, :roles, :members, :member_roles,
-           :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules, :time_entries, :issue_categories, :versions, :issue_relations, :workflows, :projects_trackers
+           :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules, :time_entries, :issue_categories, :versions, :issue_relations, :workflows, :projects_trackers,
+           :journals, :journal_details, :watchers
 
   # The bootstrap challenge advertises OAUTH_BOOTSTRAP_SCOPES: the three core read
   # scopes, the two read satellites (watchers, time entries) and
@@ -242,6 +243,96 @@ class McpControllerTest < Redmine::ControllerTest
     post_mcp rpc('tools/list'), headers
 
     assert_response :unauthorized
+  end
+
+  def test_private_journals_require_the_oauth_scope_even_when_the_role_permits_them
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Confidential journal')
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'id' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    journals = json_body.dig('result', 'structuredContent', 'journals')
+    assert_not_nil journals
+    assert_not_includes journals.map { |journal| journal['id'] }, 1
+    assert_not_includes response.body, 'Confidential journal'
+    assert_includes journals.map { |journal| journal['id'] }, 2
+  end
+
+  def test_private_journals_are_returned_when_role_and_oauth_scope_both_permit_them
+    Role.find(1).add_permission! :view_private_notes
+    Journal.find(1).update_columns(private_notes: true, notes: 'Confidential journal')
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'id' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    assert_response :success
+    assert_includes json_body.dig('result', 'structuredContent', 'journals').map { |journal| journal['id'] }, 1
+  end
+
+  def test_private_journal_scope_cannot_overcome_a_role_denial
+    Role.all.each { |role| role.remove_permission! :view_private_notes }
+    Journal.find(1).update_column(:private_notes, true)
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'id' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_issues view_private_notes')
+
+    assert_response :success
+    assert_not_includes json_body.dig('result', 'structuredContent', 'journals').map { |journal| journal['id'] }, 1
+  end
+
+  def test_authors_can_read_their_own_private_journals_without_the_private_notes_scope
+    Journal.find(2).update_column(:private_notes, true)
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'id' => 1 } }),
+             oauth_headers(User.find(2), scopes: 'view_issues')
+
+    assert_response :success
+    assert_includes json_body.dig('result', 'structuredContent', 'journals').map { |journal| journal['id'] }, 2
+  end
+
+  def test_issue_spent_hours_only_include_visible_time_entries
+    Role.update_all(time_entries_visibility: 'own')
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue',
+                               'arguments' => { 'id' => 1, 'include_spent_hours' => true } }),
+             api_key_headers(User.find(2))
+
+    assert_response :success
+    payload = json_body.dig('result', 'structuredContent')
+    assert_equal 4.25, payload['spent_hours'].to_f
+    assert_equal 4.25, payload['total_spent_hours'].to_f
+  end
+
+  def test_administrators_can_read_all_issue_spent_hours
+    Role.update_all(time_entries_visibility: 'own')
+
+    post_mcp rpc('tools/call', { 'name' => 'get_issue',
+                               'arguments' => { 'id' => 1, 'include_spent_hours' => true } }),
+             api_key_headers(User.find(1))
+
+    assert_response :success
+    assert_equal 154.25, json_body.dig('result', 'structuredContent', 'spent_hours').to_f
+  end
+
+  def test_version_time_totals_only_include_visible_records
+    Role.update_all(time_entries_visibility: 'own', issues_visibility: 'default')
+    version = Version.create!(project: Project.find(1), name: 'Visibility test')
+    Issue.find(1).update_columns(fixed_version_id: version.id, estimated_hours: 10)
+    Issue.find(3).update_columns(fixed_version_id: version.id, estimated_hours: 90,
+                                 is_private: true, author_id: 1, assigned_to_id: 1)
+    assert_not Issue.find(3).visible?(User.find(2))
+
+    post_mcp rpc('tools/call', { 'name' => 'list_versions',
+                               'arguments' => { 'project' => 'ecookbook', 'include_time_totals' => true } }),
+             oauth_headers(User.find(2), scopes: 'view_issues view_time_entries')
+
+    assert_response :success
+    item = json_body.dig('result', 'structuredContent', 'versions').find { |row| row['id'] == version.id }
+    assert_not_nil item
+    assert_equal 10, item['estimated_hours'].to_f
+    assert_equal 4.25, item['spent_hours'].to_f
   end
 
   def test_malformed_json_is_a_parse_error

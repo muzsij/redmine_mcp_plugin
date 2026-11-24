@@ -82,6 +82,31 @@ class RedmineMcpToolInventoryTest < ActiveSupport::TestCase
     assert_not result[:structuredContent].key?(:users)
   end
 
+  def test_get_group_filters_members_through_user_visibility
+    Role.update_all(users_visibility: 'all')
+    group = Group.find(10)
+    group.users << User.find(2)
+    User.find(8).lock!
+    caller = User.find(2)
+    assert group.visible?(caller)
+    assert_not User.find(8).visible?(caller)
+
+    result = call_as(caller, 'get_group', 'group' => group.id, 'include_users' => true)[:result]
+
+    assert_not result[:isError]
+    assert_includes result[:structuredContent][:users].map { |member| member[:id] }, caller.id
+    assert_not_includes result[:structuredContent][:users].map { |member| member[:id] }, 8
+  end
+
+  def test_get_group_allows_administrators_to_see_locked_members
+    User.find(8).lock!
+
+    result = call_as(User.find(1), 'get_group', 'group' => 10, 'include_users' => true)[:result]
+
+    assert_not result[:isError]
+    assert_includes result[:structuredContent][:users].map { |member| member[:id] }, 8
+  end
+
   # A builtin group must be unreachable: Group.givable excludes it, so the
   # lookup fails with the same not-found wording as a missing group.
   def test_get_group_does_not_resolve_builtin_groups

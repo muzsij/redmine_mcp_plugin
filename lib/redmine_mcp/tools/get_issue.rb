@@ -92,6 +92,10 @@ module RedmineMcp
 
         if arguments['include_spent_hours'] == true
           authorize!(:view_time_entries, issue.project)
+          # The raw aggregates include entries hidden by time_entries_visibility.
+          # Use the same visible preloaders as Redmine's issue controller.
+          Issue.load_visible_spent_hours([issue], user)
+          Issue.load_visible_total_spent_hours([issue], user)
           payload[:spent_hours] = issue.spent_hours
           payload[:total_spent_hours] = issue.total_spent_hours
         end
@@ -115,10 +119,11 @@ module RedmineMcp
         end
       end
 
-      # Journal#notes can be private (private_notes), and core gates that on
-      # :view_private_notes. Journal.visible applies exactly that rule.
+      # Journal.visible checks roles without OAuth narrowing. Core's issue
+      # history helper uses allowed_to? and preserves the author's own private
+      # notes exception, so a view_issues-only token cannot read others' notes.
       def journals_for(issue)
-        issue.journals.visible(user).includes(:user).order(:created_on).map do |journal|
+        issue.visible_journals_with_index(user).map do |journal|
           {
             id: journal.id,
             user: identity(journal.user),

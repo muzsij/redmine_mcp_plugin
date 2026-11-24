@@ -443,6 +443,13 @@ records. Record lookups start from a visible scope, and project-specific
 operations additionally authorize against that project where required. Nested
 data uses its own visibility API where Redmine provides one.
 
+`GetIssue` uses `Issue#visible_journals_with_index` so private notes respect both
+role permissions and OAuth scopes, including core's exception for the note's
+author. `GetGroup` filters member users independently through `User.visible`;
+visibility of a group does not authorize every member record. Issue and version
+time totals are computed from visible issues and time entries rather than raw
+model aggregates.
+
 Invisible and nonexistent records must remain indistinguishable. Helpers such as
 `Tools::Base#fetch_project` and tools such as `GetIssue` return the same not-found
 wording for both cases, preventing existence probes.

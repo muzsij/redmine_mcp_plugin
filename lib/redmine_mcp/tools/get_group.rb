@@ -28,7 +28,8 @@ module RedmineMcp
 
         payload = { id: group.id, name: group.name, type: 'Group' }
         if arguments['include_users'] == true
-          payload[:users] = group.users.sort_by { |member| member.name.to_s.downcase }.map { |member| identity(member) }
+          payload[:users] = group.users.visible(user).sort_by { |member| member.name.to_s.downcase }
+                                 .map { |member| identity(member) }
         end
         payload
       end
