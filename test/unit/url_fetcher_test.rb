@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
 require File.expand_path('../test_helper', __dir__)
+require 'active_support/testing/constant_stubbing'
 
 # Covers the server-side download policy behind upload_attachment_from_url:
 # address classification, the host allowlist, refusals that must happen before
 # any connection, and -- against a local TLS server whose certificate is the
 # only trusted one -- redirects, size caps, and file name detection.
 class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
+  include ActiveSupport::Testing::ConstantStubbing
+
   F = RedmineMcp::UrlFetcher
 
   def teardown
@@ -71,6 +74,35 @@ class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
     assert_refused F::DOWNLOAD_FAILED, F.new(max_bytes: 10, allow_private: true), "https://127.0.0.1:#{port}/"
   end
 
+  def test_a_mixed_public_and_internal_dns_answer_is_refused_before_connecting
+    fetcher = F.new(max_bytes: 10)
+    fetcher.expects(:resolve).with('files.example.test').returns(
+      [IPAddr.new('8.8.8.8'), IPAddr.new('169.254.169.254')]
+    )
+    fetcher.expects(:get).never
+
+    assert_refused 'files.example.test resolves to an internal address, which is not allowed',
+                   fetcher, 'https://files.example.test/file'
+  end
+
+  def test_connection_uses_the_vetted_address_with_the_original_tls_hostname
+    fetcher = local_fetcher
+    fetcher.expects(:resolve).with('files.example.test').once.returns([IPAddr.new('127.0.0.1')])
+
+    download = fetcher.fetch("https://files.example.test:#{@port}/file")
+
+    assert_equal 'hello world', download.io.read
+  ensure
+    download&.io&.close!
+  end
+
+  def test_a_trusted_certificate_for_another_hostname_is_refused
+    fetcher = local_fetcher
+    fetcher.expects(:resolve).with('other.example.test').returns([IPAddr.new('127.0.0.1')])
+
+    assert_refused F::DOWNLOAD_FAILED, fetcher, "https://other.example.test:#{@port}/file"
+  end
+
   def test_downloads_a_file_with_its_reported_name_and_type
     download = local_fetcher.fetch("#{base}/file")
 
@@ -103,6 +135,10 @@ class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
     assert_refused 'Downloads from localhost are not allowed', fetcher, "#{base}/redirect-away"
   end
 
+  def test_a_redirect_cannot_downgrade_https_to_http
+    assert_refused 'Only https URLs can be downloaded', local_fetcher, "#{base}/redirect-http"
+  end
+
   def test_redirect_to_an_internal_address_is_refused_when_private_addresses_are_off
     # The first hop is a public-looking name in the allowlist that only this
     # test can resolve; the redirect then lands on an internal address.
@@ -125,6 +161,25 @@ class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
 
   def test_undeclared_oversize_body_is_cut_off_while_streaming
     assert_refused 'The file is larger than the 1 KB attachment limit', local_fetcher, "#{base}/big-streamed"
+  end
+
+  def test_download_stops_when_a_chunk_arrives_after_the_total_deadline
+    fetcher = local_fetcher
+    fetcher.stubs(:monotonic).returns(0, F::TOTAL_TIMEOUT + 1)
+
+    assert_refused F::DOWNLOAD_FAILED, fetcher, "#{base}/file"
+  end
+
+  def test_total_deadline_also_bounds_waiting_for_response_headers
+    fetcher = local_fetcher
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    stub_const(F, :TOTAL_TIMEOUT, 0.2) do
+      assert_refused F::DOWNLOAD_FAILED, fetcher, "#{base}/slow-headers"
+    end
+
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    assert_operator elapsed, :<, 0.8, 'the total deadline must expire before the delayed headers arrive'
   end
 
   def test_error_status_is_reported
@@ -197,11 +252,16 @@ class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
       reply(socket, 200, '# notes', 'Content-Type' => 'text/markdown')
     when '/redirect' then reply(socket, 302, '', 'Location' => '/file')
     when '/redirect-away' then reply(socket, 302, '', 'Location' => "https://localhost:#{@port}/file")
+    when '/redirect-http' then reply(socket, 302, '', 'Location' => "http://127.0.0.1:#{@port}/file")
     when '/loop' then reply(socket, 302, '', 'Location' => '/loop')
     when '/big-declared' then reply(socket, 200, 'x' * 10, 'Content-Length' => '5000')
     when '/big-streamed'
       socket.write("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
       socket.write('x' * 5000)
+    when '/slow-headers'
+      socket.write("HTTP/1.1 200 OK\r\n")
+      sleep 1
+      socket.write("Content-Length: 2\r\nConnection: close\r\n\r\nok")
     else reply(socket, 404, 'missing')
     end
   end
@@ -223,7 +283,7 @@ class RedmineMcpUrlFetcherTest < ActiveSupport::TestCase
       cert.not_after = Time.now + 3600
       extensions = OpenSSL::X509::ExtensionFactory.new(cert, cert)
       cert.add_extension(extensions.create_extension('basicConstraints', 'CA:TRUE', true))
-      cert.add_extension(extensions.create_extension('subjectAltName', 'IP:127.0.0.1', false))
+      cert.add_extension(extensions.create_extension('subjectAltName', 'IP:127.0.0.1,DNS:files.example.test', false))
       cert.sign(key, OpenSSL::Digest.new('SHA256'))
       [key, cert]
     end

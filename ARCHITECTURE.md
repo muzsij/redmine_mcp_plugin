@@ -342,7 +342,9 @@ verifies the original host name, so DNS rebinding cannot swap the target after t
 check. At most three redirects are followed, and each hop is validated again
 (scheme, host list, address). No cookies, credentials, or Redmine headers are
 sent. The body is streamed into a tempfile under connect and read timeouts and is
-aborted as soon as it exceeds `attachment_max_size`.
+aborted as soon as it exceeds `attachment_max_size`. An outer 120-second deadline
+bounds the entire exchange, including DNS resolution, response headers, and
+redirects, even when individual reads keep making progress.
 
 Policy refusals name their reason. Connection-level failures return one uniform
 message, so the tool cannot be used to scan ports. The URL is never logged,

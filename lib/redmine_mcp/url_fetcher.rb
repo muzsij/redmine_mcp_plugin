@@ -3,6 +3,7 @@
 require 'ipaddr'
 require 'net/http'
 require 'tempfile'
+require 'timeout'
 
 module RedmineMcp
   # Downloads a URL on the Redmine server for upload_attachment_from_url. That
@@ -75,13 +76,19 @@ module RedmineMcp
     # closes and unlinks it.
     def fetch(url)
       @deadline = monotonic + TOTAL_TIMEOUT
-      uri = parse(url)
-      (MAX_REDIRECTS + 1).times do
-        return get(uri, vet!(uri))
-      rescue Redirect => e
-        uri = e.target
+      # Per-read timeouts reset with incoming data. Bound the whole exchange,
+      # including response headers and redirects before body streaming begins.
+      # The deadline arrives as a ToolError inside this block, so every rescue
+      # below must re-raise it; swallowing it would silently lift the bound.
+      Timeout.timeout(TOTAL_TIMEOUT, ToolError, DOWNLOAD_FAILED) do
+        uri = parse(url)
+        (MAX_REDIRECTS + 1).times do
+          return get(uri, vet!(uri))
+        rescue Redirect => e
+          uri = e.target
+        end
+        raise ToolError, "The URL redirected more than #{MAX_REDIRECTS} times"
       end
-      raise ToolError, "The URL redirected more than #{MAX_REDIRECTS} times"
     end
 
     def host_allowed?(host)
