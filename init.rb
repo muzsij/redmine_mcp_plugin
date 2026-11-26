@@ -23,8 +23,8 @@ Redmine::Plugin.register :redmine_mcp do
   description 'Exposes Redmine over the Model Context Protocol, in-process, ' \
               'using Redmine\'s own authentication and permission system.'
   version     RedmineMcp::VERSION
-  url         'https://github.com/serenysoft/redmine_mcp_plugin'
-  author_url  'https://github.com/serenysoft/redmine_mcp_plugin/graphs/contributors'
+  url         'https://github.com/muzsij/redmine_mcp_plugin'
+  author_url  'https://github.com/muzsij/redmine_mcp_plugin/graphs/contributors'
 
   # Redmine 6.1 is the minimum release with the required OAuth2 support.
   requires_redmine version_or_higher: '6.1.0'

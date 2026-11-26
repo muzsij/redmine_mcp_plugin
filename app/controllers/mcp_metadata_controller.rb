@@ -22,7 +22,7 @@ class McpMetadataController < ApplicationController
       scopes_supported: RedmineMcp::OauthScopes.initial,
       bearer_methods_supported: %w[header],
       resource_name: 'Redmine MCP',
-      resource_documentation: 'https://github.com/serenysoft/redmine_mcp_plugin'
+      resource_documentation: 'https://github.com/muzsij/redmine_mcp_plugin'
     }
   end
 

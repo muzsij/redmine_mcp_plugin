@@ -10,6 +10,9 @@ visibility limit what that user can access, and OAuth2 scopes can narrow access
 further. The endpoint is disabled after installation and, once enabled, starts in
 read-only mode.
 
+This is a fork of [serenysoft/redmine_mcp](https://github.com/serenysoft/redmine_mcp);
+see [Differences from the original project](#differences-from-the-original-project).
+
 ## Quickstart
 
 ### 1. Install the plugin
@@ -19,7 +22,7 @@ place this repository at `plugins/redmine_mcp`, install dependencies, and
 run the required plugin migration:
 
 ```sh
-git clone https://github.com/serenysoft/redmine_mcp_plugin.git plugins/redmine_mcp
+git clone https://github.com/muzsij/redmine_mcp_plugin.git plugins/redmine_mcp
 bundle install
 bin/rails redmine:plugins:migrate NAME=redmine_mcp RAILS_ENV=production
 ```
@@ -344,6 +347,43 @@ security boundaries. Redmine's official [plugin development
 tutorial](https://www.redmine.org/projects/redmine/wiki/Plugin_Tutorial) is useful
 background, but its examples target older Redmine versions; this repository's
 current behavior, tests, and supported Redmine APIs take precedence.
+
+## Differences from the original project
+
+Forked from [serenysoft/redmine_mcp](https://github.com/serenysoft/redmine_mcp) at
+commit `346f261`, which in turn builds on
+[joaoperfig/redmine_mcp_plugin](https://github.com/joaoperfig/redmine_mcp_plugin).
+Changes since then:
+
+- **Attaching files:** `create_issue`, `update_issue`, and `add_issue_note` take an
+  `uploads` argument. A file can reach Redmine through a signed, 15-minute upload
+  URL from `create_attachment_upload`, so it never passes through the model;
+  through a server-side download with `upload_attachment_from_url`, which is off by
+  default, `https` only, and refuses internal addresses; or as up to 64 KiB of
+  base64 with `upload_attachment_content`. See [Attaching files](#attaching-files).
+- **Field changes always reach the history:** `update_issue` always opens a
+  journal, so changes made without a note are recorded on the issue.
+- **Works with Claude's connectors:** dynamic client registration accepts
+  confidential clients (`client_secret_post` and `client_secret_basic`). Because
+  Claude does not accumulate step-up grants, the first handshake already requests
+  the write and private-note scopes when read-only mode is off. Read tools that
+  need a write permission, such as `list_issue_custom_fields`, now get a scope
+  challenge instead of a server error. Refused registrations and scope challenges
+  are logged with their reason.
+- **OAuth scopes on every read:** `get_issue` notes and spent hours,
+  `list_versions` totals, `get_group` members, and the `search_issues` filters for
+  notes, note authors, watchers, field history, full text, and spent time follow the
+  token's scopes and Redmine's visibility rules. A token without
+  `view_private_notes` or `view_issue_watchers` can neither read nor probe that
+  data. Redmine's own classes are not patched.
+- **Stricter authentication:** an HTTP Basic header with a blank username is
+  refused instead of falling back to the browser session. Client registration
+  accepts only absolute HTTP(S) redirect URIs without credentials or fragments,
+  and plain HTTP only for loopback hosts.
+- **Redmine 7 and Ruby 4:** besides Redmine 6.1, the plugin runs on Redmine 7.0
+  with Ruby 4.0, where the spent-time filter also accepts durations such as `1:30`.
+- **Tested** with the full test suite on Redmine 6.1 (Ruby 3.4) and Redmine 7.0
+  (Ruby 4.0), and in production on Redmine 6.1 with claude.ai.
 
 ## License
 
